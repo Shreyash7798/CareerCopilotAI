@@ -1,0 +1,66 @@
+# Job sources to poll. Copy to config/sources.yaml and edit.
+#
+# Every entry is independent: a failing source never blocks the others, and
+# new source types can be added under app/sources/ without touching the core.
+#
+# Supported types:
+#   greenhouse : public Greenhouse board API (no auth, no scraping)
+#                board  -> the token in boards.greenhouse.io/<board>
+#   lever      : public Lever postings API (no auth, no scraping)
+#                company -> the token in jobs.lever.co/<company>
+#   workday    : public Workday CXS JSON API used by <tenant>.wdN.myworkdayjobs.com
+#                host   -> e.g. pwc.wd3.myworkdayjobs.com
+#                tenant -> e.g. pwc
+#                site   -> the career site name, e.g. Global_Experienced_Careers
+#                search_text (optional) -> server-side keyword filter
+#   careers_page : generic public careers page, parsed with BeautifulSoup and,
+#                if 'render: true', rendered first with Playwright (for
+#                JavaScript-heavy pages).
+#                url          -> page to fetch
+#                link_selector-> CSS selector for anchors that point at jobs
+#
+# 'company' below is the display name stored in the database.
+
+sources:
+  - type: greenhouse
+    company: Xero
+    board: xero
+    enabled: true
+
+  - type: greenhouse
+    company: GitLab
+    board: gitlab
+    enabled: true
+
+  - type: lever
+    company: Netflix
+    board: netflix
+    enabled: false
+
+  - type: workday
+    company: PwC
+    host: pwc.wd3.myworkdayjobs.com
+    tenant: pwc
+    site: Global_Experienced_Careers
+    search_text: consulting
+    enabled: false
+
+  - type: careers_page
+    company: Example Co
+    url: https://example.com/careers
+    link_selector: "a.job-link"
+    render: false
+    enabled: false
+
+# Only jobs whose title or location matches these filters are kept.
+# Leave a list empty to disable that filter.
+filters:
+  title_must_contain_any:
+    - consultant
+    - consulting
+    - strategy
+    - transformation
+    - operations
+    - supply chain
+    - advisory
+  location_must_contain_any: []

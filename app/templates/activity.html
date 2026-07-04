@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Activity · CareerCopilot AI{% endblock %}
+{% block content %}
+<h1>Activity log</h1>
+<div class="card table-wrap">
+  <table class="list">
+    <tr><th>Time (UTC)</th><th>Category</th><th>Message</th></tr>
+    {% for log in logs %}
+    <tr>
+      <td class="small muted">{{ log.timestamp.strftime('%d %b %Y %H:%M') }}</td>
+      <td><span class="badge">{{ log.category }}</span></td>
+      <td class="small">{{ log.message }}{% if log.detail %}<div class="muted">{{ log.detail }}</div>{% endif %}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="3" class="muted">No activity yet.</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

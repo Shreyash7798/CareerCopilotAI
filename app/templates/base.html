@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>{% block title %}CareerCopilot AI{% endblock %}</title>
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="apple-touch-icon" href="/static/icon-192.png">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">Career<span>Copilot</span></a>
+    <form method="post" action="/api/pipeline/run" class="inline-form" onsubmit="return runPipeline(event)">
+      <button class="btn btn-accent" type="submit" id="run-btn">Run discovery</button>
+    </form>
+  </header>
+  <nav class="mainnav">
+    <a href="/" class="{{ 'on' if active == 'dashboard' }}">Dashboard</a>
+    <a href="/jobs" class="{{ 'on' if active == 'jobs' }}">Jobs</a>
+    <a href="/applications" class="{{ 'on' if active == 'applications' }}">Tracker</a>
+    <a href="/companies" class="{{ 'on' if active == 'companies' }}">Companies</a>
+    <a href="/recruiters" class="{{ 'on' if active == 'recruiters' }}">Recruiters</a>
+    <a href="/profile" class="{{ 'on' if active == 'profile' }}">Profile</a>
+    <a href="/settings" class="{{ 'on' if active == 'settings' }}">Settings</a>
+    <a href="/activity" class="{{ 'on' if active == 'activity' }}">Activity</a>
+  </nav>
+  <main class="content">
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="footer">
+    CareerCopilot AI · local-first ·
+    <a href="/api/exports/excel/download">Download Excel</a> ·
+    <a href="/docs">API</a>
+  </footer>
+  <script>
+    async function runPipeline(event) {
+      event.preventDefault();
+      const btn = document.getElementById('run-btn');
+      btn.disabled = true; btn.textContent = 'Running…';
+      try {
+        const res = await fetch('/api/pipeline/run-sync', {method: 'POST'});
+        const data = await res.json();
+        alert(`Discovery finished: ${data.new_jobs} new jobs (${data.high_priority} high priority), ` +
+              `${data.duplicates} duplicates skipped.` +
+              (data.errors.length ? `\nIssues: ${data.errors.join('; ')}` : ''));
+        location.reload();
+      } catch (err) {
+        alert('Discovery failed: ' + err);
+      } finally {
+        btn.disabled = false; btn.textContent = 'Run discovery';
+      }
+      return false;
+    }
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/static/sw.js');
+    }
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Jobs · CareerCopilot AI{% endblock %}
+{% block content %}
+<h1>Jobs <span class="muted small">({{ total }} matching)</span></h1>
+
+<form class="filters" method="get" action="/jobs">
+  <input type="search" name="q" placeholder="Title contains…" value="{{ filters.q }}">
+  <input type="text" name="location" placeholder="Location…" value="{{ filters.location }}">
+  <input type="text" name="company" placeholder="Company…" value="{{ filters.company }}">
+  <input type="number" name="min_score" min="0" max="100" step="5" placeholder="Min score" value="{{ filters.min_score if filters.min_score else '' }}" style="width:110px">
+  <label><input type="checkbox" name="high_priority" value="true" {{ 'checked' if filters.high_priority }}> High priority only</label>
+  <button class="btn" type="submit">Filter</button>
+  <a class="btn" href="/jobs">Reset</a>
+</form>
+
+<div class="card table-wrap">
+  <table class="list">
+    <tr><th>Score</th><th>Role</th><th>Company</th><th>Location</th><th>Source</th><th>Found</th></tr>
+    {% for job in jobs %}
+    <tr>
+      <td><span class="score {{ 'hi' if job.match_score >= 70 else 'mid' if job.match_score >= 45 else 'lo' }}">{{ job.match_score|round|int }}</span></td>
+      <td>
+        <a href="/jobs/{{ job.id }}">{{ job.title }}</a>
+        {% if job.is_high_priority %}<span class="badge hp">high priority</span>{% endif %}
+      </td>
+      <td>{{ job.company.name if job.company }}</td>
+      <td>{{ job.location or '—' }}</td>
+      <td class="muted small">{{ job.source }}</td>
+      <td class="muted small">{{ job.discovered_at.strftime('%d %b') if job.discovered_at }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="muted">No jobs found. Configure sources in Settings, then press “Run discovery”.</td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+{% if pages > 1 %}
+<div class="pagination">
+  {% if page > 1 %}<a class="btn" href="/jobs?q={{ filters.q }}&location={{ filters.location }}&company={{ filters.company }}&min_score={{ filters.min_score }}&page={{ page - 1 }}">← Prev</a>{% endif %}
+  <span class="btn" style="cursor:default">{{ page }} / {{ pages }}</span>
+  {% if page < pages %}<a class="btn" href="/jobs?q={{ filters.q }}&location={{ filters.location }}&company={{ filters.company }}&min_score={{ filters.min_score }}&page={{ page + 1 }}">Next →</a>{% endif %}
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · CareerCopilot AI{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+
+<div class="grid cols-4">
+  <div class="card stat"><div class="num">{{ analytics.total_jobs }}</div><div class="label">Jobs discovered</div></div>
+  <div class="card stat"><div class="num">{{ analytics.high_priority_jobs }}</div><div class="label">High priority</div></div>
+  <div class="card stat"><div class="num">{{ analytics.applications_submitted }}</div><div class="label">Applications</div></div>
+  <div class="card stat"><div class="num">{{ analytics.interview_conversion_pct }}%</div><div class="label">Interview conversion</div></div>
+</div>
+
+<div class="grid cols-2">
+  <div class="card">
+    <h2>Latest high-priority matches</h2>
+    {% if recent_high %}
+      {% for job in recent_high %}
+        <div class="mt">
+          <span class="score {{ 'hi' if job.match_score >= 70 else 'mid' if job.match_score >= 45 else 'lo' }}">{{ job.match_score|round|int }}</span>
+          <a href="/jobs/{{ job.id }}">{{ job.title }}</a>
+          <div class="small muted">{{ job.company.name if job.company }} · {{ job.location or 'location n/a' }}</div>
+        </div>
+      {% endfor %}
+    {% else %}
+      <p class="muted">No high-priority jobs yet. Configure sources in <a href="/settings">Settings</a> and press “Run discovery”.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Follow-ups due</h2>
+    {% if follow_ups %}
+      {% for a in follow_ups %}
+        <div class="mt">
+          <span class="badge status-{{ a.status }}">{{ a.status }}</span>
+          {{ a.company_name or '—' }} · {{ a.role or '' }}
+          <div class="small muted">Follow up by {{ a.follow_up_date.strftime('%d %b %Y') if a.follow_up_date }}</div>
+        </div>
+      {% endfor %}
+    {% else %}
+      <p class="muted">No follow-ups scheduled. Add them in the <a href="/applications">Tracker</a>.</p>
+    {% endif %}
+
+    <h2>Top hiring companies</h2>
+    {% for c in analytics.top_companies[:6] %}
+      <div class="bar-row">
+        <div class="name">{{ c.name }}</div>
+        <div class="bar"><i style="width: {{ (100 * c.jobs / (analytics.top_companies[0].jobs or 1))|round|int }}%"></i></div>
+        <div class="val">{{ c.jobs }}</div>
+      </div>
+    {% else %}
+      <p class="muted">Nothing yet.</p>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="grid cols-2">
+  <div class="card">
+    <h2>Most requested keywords (recent JDs)</h2>
+    {% for s in analytics.common_skills[:10] %}
+      <span class="badge" style="margin: 2px;">{{ s.keyword }} · {{ s.count }}</span>
+    {% else %}
+      <p class="muted">Run discovery to populate.</p>
+    {% endfor %}
+    <p class="small muted mt">Average match score across all jobs: <strong>{{ analytics.avg_match_score }}</strong></p>
+  </div>
+
+  <div class="card">
+    <h2>Recent activity</h2>
+    {% for log in recent_logs %}
+      <div class="small mt"><span class="muted">{{ log.timestamp.strftime('%d %b %H:%M') }}</span> · <span class="badge">{{ log.category }}</span> {{ log.message }}</div>
+    {% else %}
+      <p class="muted">No activity yet.</p>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

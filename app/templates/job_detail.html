@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}{{ job.title }} · CareerCopilot AI{% endblock %}
+{% block content %}
+<p class="small"><a href="/jobs">← Back to jobs</a></p>
+<h1>{{ job.title }}</h1>
+<p>
+  <span class="score {{ 'hi' if job.match_score >= 70 else 'mid' if job.match_score >= 45 else 'lo' }}">{{ job.match_score|round|int }}</span>
+  {% if job.is_high_priority %}<span class="badge hp">high priority</span>{% endif %}
+  <strong>{{ job.company.name if job.company }}</strong> · {{ job.location or 'location n/a' }}
+  · <span class="muted small">via {{ job.source }}</span>
+</p>
+
+<p>
+  {% if job.url %}<a class="btn btn-accent" href="{{ job.url }}" target="_blank" rel="noopener">Open original posting ↗</a>{% endif %}
+  <form class="inline-form" method="post" action="/jobs/{{ job.id }}/track">
+    <button class="btn" type="submit">Track application</button>
+  </form>
+  {% if has_master %}
+  <button class="btn" onclick="tailorResume({{ job.id }})" id="tailor-btn">Generate tailored resume</button>
+  {% else %}
+  <a class="btn" href="/profile" title="Upload a DOCX master resume first">Upload resume to enable tailoring</a>
+  {% endif %}
+</p>
+
+<div class="grid cols-2">
+  <div class="card">
+    <h2>Why this score (explainable)</h2>
+    {% for c in breakdown %}
+      <div class="bar-row">
+        <div class="name">{{ c.name.replace('_', ' ') }} <span class="muted">×{{ c.weight }}</span></div>
+        <div class="bar"><i style="width: {{ (c.score * 100)|round|int }}%"></i></div>
+        <div class="val">{{ (c.score * 100)|round|int }}</div>
+      </div>
+      <div class="small muted" style="margin: -4px 0 10px 0">{{ c.reason }}</div>
+    {% else %}
+      <p class="muted">No breakdown stored for this job.</p>
+    {% endfor %}
+  </div>
+
+  <div class="card">
+    <h2>Tailored resumes for this job</h2>
+    {% for r in resumes %}
+      <div class="mt small">
+        {{ r.created_at.strftime('%d %b %Y %H:%M') }} ·
+        <a href="/api/resumes/{{ r.id }}/download?fmt=docx">DOCX</a>
+        {% if r.pdf_path %} · <a href="/api/resumes/{{ r.id }}/download?fmt=pdf">PDF</a>{% endif %}
+      </div>
+    {% else %}
+      <p class="muted">None generated yet.</p>
+    {% endfor %}
+    <p class="small muted mt">Tailoring reorders your existing skills and bullet points to match this JD. It never invents experience.</p>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Job description</h2>
+  <div class="desc">{{ job.description or 'No description captured for this posting.' }}</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function tailorResume(jobId) {
+  const btn = document.getElementById('tailor-btn');
+  btn.disabled = true; btn.textContent = 'Generating…';
+  try {
+    const res = await fetch(`/api/resumes/tailor/${jobId}`, {method: 'POST'});
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'failed');
+    alert(`Tailored resume created.\nMatched keywords: ${data.matched_keywords.slice(0, 12).join(', ')}`);
+    location.reload();
+  } catch (err) {
+    alert('Resume generation failed: ' + err.message);
+    btn.disabled = false; btn.textContent = 'Generate tailored resume';
+  }
+}
+</script>
+{% endblock %}

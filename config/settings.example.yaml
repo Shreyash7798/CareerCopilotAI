@@ -1,0 +1,125 @@
+# CareerCopilot AI configuration.
+#
+# Copy this file to config/settings.yaml and adjust it for yourself.
+# Nothing about the user is hardcoded in the application: this file (plus the
+# CV you upload from the dashboard) is the single source of personalization.
+
+app:
+  # Where the SQLite database, exports and generated resumes live.
+  data_dir: data
+  database_url: sqlite:///data/careercopilot.db
+  host: 0.0.0.0
+  port: 8000
+  # Base URL used in notification links (set to your LAN/host address).
+  base_url: http://localhost:8000
+
+scheduler:
+  enabled: true
+  # How often the discovery pipeline runs (minutes).
+  discovery_interval_minutes: 180
+  # Time of day (24h, local server time) for the daily summary notification.
+  daily_summary_time: "08:30"
+
+profile:
+  # This block is auto-populated when you upload a CV, but you can edit it
+  # freely. It is the input to match scoring.
+  full_name: ""
+  email: ""
+  phone: ""
+  current_employer: PwC India
+  previous_employers:
+    - Knest Manufacturers LLP
+  experience_years: 3
+  preferred_locations:
+    - Mumbai
+    - Pune
+  # Also acceptable (scored lower than preferred):
+  acceptable_locations:
+    - Remote
+    - Bengaluru
+  preferred_domains:
+    - Global Business Consulting
+  interests:
+    - Business Transformation
+    - Operations Consulting
+    - Manufacturing Consulting
+    - Supply Chain Consulting
+    - Strategy Consulting
+  skills:
+    - Business Transformation
+    - Operations
+    - Supply Chain
+    - Strategy
+    - Process Improvement
+    - Stakeholder Management
+    - Project Management
+    - Data Analysis
+    - Excel
+    - PowerPoint
+  # Companies you would prioritize (boosts score) or avoid (zeroes the
+  # company component).
+  preferred_companies:
+    - McKinsey
+    - BCG
+    - Bain
+    - Deloitte
+    - EY
+    - KPMG
+    - Accenture
+    - Kearney
+  avoided_companies: []
+
+scoring:
+  # Weights must be positive; they are normalized automatically.
+  weights:
+    role_fit: 0.30
+    location_fit: 0.20
+    experience_fit: 0.15
+    industry_fit: 0.10
+    skills_fit: 0.15
+    company_fit: 0.10
+  # Jobs scoring at or above this (0-100) are "high priority" and trigger
+  # instant notifications.
+  high_priority_threshold: 70
+  # Title keywords that indicate seniority mismatch get penalized.
+  role_keywords:
+    - consultant
+    - consulting
+    - strategy
+    - transformation
+    - operations
+    - supply chain
+    - advisory
+    - manager
+  negative_role_keywords:
+    - intern
+    - director
+    - partner
+    - vice president
+
+notifications:
+  telegram:
+    enabled: false
+    # Create a bot with @BotFather, then set the token and your chat id.
+    bot_token: ""
+    chat_id: ""
+  email:
+    enabled: false
+    smtp_host: smtp.gmail.com
+    smtp_port: 587
+    username: ""
+    # For Gmail use an app password, never your real password.
+    password: ""
+    from_address: ""
+    to_address: ""
+
+exports:
+  excel:
+    enabled: true
+    path: data/careercopilot.xlsx
+  google_sheets:
+    # Optional; requires a service-account JSON. Left disabled by default to
+    # keep the zero-cost, local-first promise.
+    enabled: false
+    credentials_file: ""
+    spreadsheet_id: ""
