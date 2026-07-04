@@ -23,8 +23,8 @@
 
 sources:
   - type: greenhouse
-    company: Xero
-    board: xero
+    company: Stripe
+    board: stripe
     enabled: true
 
   - type: greenhouse

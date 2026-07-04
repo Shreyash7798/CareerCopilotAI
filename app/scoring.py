@@ -122,8 +122,9 @@ def score_company_fit(company: str, profile: dict) -> tuple[float, str]:
     preferred = _contains_any(company, profile.get("preferred_companies") or [])
     if preferred:
         return 1.0, "Company is on your preferred list"
-    current = profile.get("current_employer") or ""
-    if current and current.lower() in company.lower():
+    current = (profile.get("current_employer") or "").lower()
+    lowered = company.lower()
+    if current and (current in lowered or lowered in current):
         return 0.3, "This is your current employer"
     return 0.5, "Neutral: company not on preferred or avoid lists"
 

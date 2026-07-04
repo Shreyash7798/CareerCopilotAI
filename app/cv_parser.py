@@ -107,7 +107,13 @@ def _guess_experience_years(text: str) -> float | None:
 
 def _extract_skills(text: str) -> list[str]:
     lowered = text.lower()
-    return [s for s in SKILL_VOCABULARY if s.lower() in lowered]
+    found = []
+    for skill in SKILL_VOCABULARY:
+        # Word-boundary match so short skills (ERP, SQL) don't match inside
+        # longer words (e.g. "PowERPoint").
+        if re.search(rf"(?<![a-z0-9]){re.escape(skill.lower())}(?![a-z0-9])", lowered):
+            found.append(skill)
+    return found
 
 
 def _extract_employers(text: str) -> list[str]:
