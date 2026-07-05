@@ -147,6 +147,12 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         .scalars()
         .all()
     )
+    settings = get_settings()
+    discovery_mins = int(settings.get("scheduler", {}).get("discovery_interval_minutes") or 60)
+    profile = get_profile()
+    display_name = (profile.get("full_name") or "").strip()
+    if display_name:
+        display_name = display_name.split()[0]
     return templates.TemplateResponse(
         request,
         "dashboard.html",
@@ -159,6 +165,8 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
             "follow_ups": follow_ups,
             "monitored_count": monitored_count,
             "has_cv": has_cv,
+            "display_name": display_name,
+            "discovery_mins": discovery_mins,
         },
     )
 
