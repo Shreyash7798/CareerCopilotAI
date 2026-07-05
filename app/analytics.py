@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy import func, select
 
+from app.job_visibility import visible_jobs_filter
 from app.models import Application, Company, Job
 from app.resume_engine import extract_keywords
 
@@ -14,14 +15,18 @@ INTERVIEW_STATUSES = ["Interviewing", "Offer"]
 
 
 def compute_analytics(session) -> dict:
+    visible = visible_jobs_filter()
     total_jobs = session.execute(select(func.count(Job.id))).scalar() or 0
-    active_jobs = (
-        session.execute(select(func.count(Job.id)).where(Job.is_active.is_(True))).scalar() or 0
-    )
+    active_jobs = session.execute(select(func.count(Job.id)).where(visible)).scalar() or 0
     high_priority = (
-        session.execute(select(func.count(Job.id)).where(Job.is_high_priority.is_(True))).scalar() or 0
+        session.execute(
+            select(func.count(Job.id)).where(visible, Job.is_high_priority.is_(True))
+        ).scalar()
+        or 0
     )
-    avg_score = session.execute(select(func.avg(Job.match_score))).scalar() or 0.0
+    avg_score = (
+        session.execute(select(func.avg(Job.match_score)).where(visible)).scalar() or 0.0
+    )
 
     apps = session.execute(select(Application)).scalars().all()
     submitted = [a for a in apps if a.status not in ("Planned",)]
@@ -31,6 +36,7 @@ def compute_analytics(session) -> dict:
     top_companies = session.execute(
         select(Company.name, func.count(Job.id))
         .join(Job, Job.company_id == Company.id)
+        .where(visible)
         .group_by(Company.name)
         .order_by(func.count(Job.id).desc())
         .limit(10)
@@ -38,7 +44,10 @@ def compute_analytics(session) -> dict:
 
     descriptions = (
         session.execute(
-            select(Job.description).where(Job.description.isnot(None)).order_by(Job.discovered_at.desc()).limit(200)
+            select(Job.description)
+            .where(Job.description.isnot(None), visible)
+            .order_by(Job.discovered_at.desc())
+            .limit(200)
         )
         .scalars()
         .all()
@@ -50,7 +59,7 @@ def compute_analytics(session) -> dict:
 
     jobs_by_source = session.execute(
         select(Job.source, func.count(Job.id))
-        .where(Job.is_active.is_(True))
+        .where(visible)
         .group_by(Job.source)
         .order_by(func.count(Job.id).desc())
     ).all()
@@ -58,24 +67,24 @@ def compute_analytics(session) -> dict:
     jobs_by_sector = session.execute(
         select(Company.sector, func.count(Job.id))
         .join(Job, Job.company_id == Company.id)
-        .where(Job.is_active.is_(True), Company.sector.isnot(None))
+        .where(visible, Company.sector.isnot(None))
         .group_by(Company.sector)
         .order_by(func.count(Job.id).desc())
     ).all()
 
     score_buckets = {
         "high": session.execute(
-            select(func.count(Job.id)).where(Job.is_active.is_(True), Job.match_score >= 70)
+            select(func.count(Job.id)).where(visible, Job.match_score >= 70)
         ).scalar()
         or 0,
         "medium": session.execute(
             select(func.count(Job.id)).where(
-                Job.is_active.is_(True), Job.match_score >= 45, Job.match_score < 70
+                visible, Job.match_score >= 45, Job.match_score < 70
             )
         ).scalar()
         or 0,
         "low": session.execute(
-            select(func.count(Job.id)).where(Job.is_active.is_(True), Job.match_score < 45)
+            select(func.count(Job.id)).where(visible, Job.match_score < 45)
         ).scalar()
         or 0,
     }

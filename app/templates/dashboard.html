@@ -41,7 +41,7 @@
         <div class="mt">
           <span class="score {{ 'hi' if job.match_score >= 70 else 'mid' if job.match_score >= 45 else 'lo' }}">{{ job.match_score|round|int }}</span>
           <a href="/jobs/{{ job.id }}">{{ job.title }}</a>
-          <div class="small muted">{{ job.company.name if job.company }} · {{ job.location or 'location n/a' }}</div>
+          <div class="small muted">{{ job.company.name if job.company }} · {{ job.location or 'location n/a' }}{% if job|job_age_label %} · {{ job|job_age_label }}{% endif %}</div>
         </div>
       {% endfor %}
       {% if not recent_high and analytics.active_jobs %}

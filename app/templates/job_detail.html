@@ -6,9 +6,18 @@
 <p>
   <span class="score {{ 'hi' if job.match_score >= 70 else 'mid' if job.match_score >= 45 else 'lo' }}">{{ job.match_score|round|int }}</span>
   {% if job.is_high_priority %}<span class="badge hp">high priority</span>{% endif %}
+  {% if status_badge %}<span class="badge closed">{{ status_badge }}</span>{% endif %}
   <strong>{{ job.company.name if job.company }}</strong> · {{ job.location or 'location n/a' }}
   · <span class="muted small">via {{ job.source }}</span>
+  {% if job|job_age_label %} · <span class="muted small">{{ job|job_age_label }}</span>{% endif %}
 </p>
+{% if job.posted_at or job.discovered_at %}
+<p class="small muted">
+  {% if job.posted_at %}Posted {{ job.posted_at.strftime('%d %b %Y') }}{% endif %}
+  {% if job.posted_at and job.discovered_at %} · {% endif %}
+  {% if job.discovered_at %}Found by CareerCopilot {{ job.discovered_at.strftime('%d %b %Y') }}{% endif %}
+</p>
+{% endif %}
 
 <p>
   {% if job.url %}<a class="btn btn-accent" href="{{ job.url }}" target="_blank" rel="noopener">Open original posting ↗</a>{% endif %}

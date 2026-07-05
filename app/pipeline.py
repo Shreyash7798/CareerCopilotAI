@@ -17,8 +17,9 @@ from app.config import get_settings, get_sources_config, sources_yaml_exists
 from app.db import session_scope
 from app.dedup import dedup_key, is_fuzzy_duplicate
 from app.exporter import export_excel, export_google_sheets
-from app.models import Company, Job, Recruiter, log_activity
+from app.models import Application, Company, Job, Recruiter, log_activity
 from app.normalize import normalize, passes_filters
+from app.job_visibility import is_aged_out, visibility_settings
 from app.recruiter_discovery import upsert_recruiters
 from app.scoring import score_job
 from app.sources import REGISTRY
@@ -47,7 +48,7 @@ class PipelineResult:
 # run. Only for these is "job no longer returned" reliable evidence that the
 # posting closed; paginated/search-limited connectors (workday, careers_page,
 # smartrecruiters) could exceed fetch caps and cause false deactivations.
-FULL_LIST_CONNECTORS = {"greenhouse", "lever"}
+FULL_LIST_CONNECTORS = {"greenhouse", "lever", "accenture", "smartrecruiters"}
 
 
 def _get_or_create_company(session, name: str, profile: dict) -> Company:
@@ -251,9 +252,13 @@ def run_pipeline(notify: bool = True, export: bool = True) -> PipelineResult:
             if key in existing_jobs:
                 result.duplicates += 1
                 job_id, active = existing_jobs[key]
-                if not active:
-                    stored = session.get(Job, job_id)
-                    if stored is not None:
+                stored = session.get(Job, job_id)
+                if stored is not None:
+                    if raw.posted_at and (
+                        stored.posted_at is None or raw.posted_at > stored.posted_at
+                    ):
+                        stored.posted_at = raw.posted_at
+                    if not active:
                         stored.is_active = True
                         result.reactivated += 1
                         existing_jobs[key] = (job_id, True)
@@ -326,6 +331,23 @@ def run_pipeline(notify: bool = True, export: bool = True) -> PipelineResult:
             for job in stale_jobs:
                 job.is_active = False
                 result.deactivated += 1
+
+        # Deactivate untracked jobs that exceeded max posting age.
+        tracked_ids = {
+            row[0]
+            for row in session.execute(
+                select(Application.job_id).where(Application.job_id.isnot(None))
+            ).all()
+        }
+        vis_cfg = visibility_settings()
+        now = utcnow_naive()
+        if vis_cfg.get("hide_stale_untracked", True):
+            for job in session.execute(select(Job).where(Job.is_active.is_(True))).scalars():
+                if job.id in tracked_ids:
+                    continue
+                if is_aged_out(job, vis_cfg, now=now):
+                    job.is_active = False
+                    result.deactivated += 1
 
         if result.deactivated or result.reactivated:
             log_activity(

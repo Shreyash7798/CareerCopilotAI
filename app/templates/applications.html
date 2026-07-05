@@ -33,12 +33,14 @@
     <span class="badge status-{{ a.status }}">{{ a.status }}</span>
     <strong>{{ a.company_name or '—' }}</strong> · {{ a.role or '' }}
     {% if a.job_id %}<a class="small" href="/jobs/{{ a.job_id }}">(view job)</a>{% endif %}
+    {% if a.job and not a.job.is_active %}<span class="badge closed">posting closed</span>{% endif %}
   </div>
   <div class="small muted mt">
     Applied: {{ a.date_applied.strftime('%d %b %Y') if a.date_applied else '—' }} ·
     Follow-up: {{ a.follow_up_date.strftime('%d %b %Y') if a.follow_up_date else '—' }} ·
     Stages: {{ a.interview_stages or '—' }} ·
     Outcome: {{ a.outcome or '—' }}
+    {% if a.job and (a.job|job_age_label) %} · {{ a.job|job_age_label }}{% endif %}
   </div>
   {% if a.notes %}<div class="small mt">{{ a.notes }}</div>{% endif %}
 

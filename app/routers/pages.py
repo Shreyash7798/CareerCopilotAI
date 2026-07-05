@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app import company_sources
 from app.analytics import compute_analytics
@@ -22,6 +22,7 @@ from app.config import (
     get_sources_config,
     save_settings,
 )
+from app.job_visibility import job_age_label, job_status_badge, visible_jobs_filter
 from app.db import get_db, session_scope
 from app.models import (
     APPLICATION_STATUSES,
@@ -42,6 +43,7 @@ router = APIRouter(include_in_schema=False)
 
 TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+templates.env.filters["job_age_label"] = job_age_label
 
 
 def _parse_date(value: str | None) -> datetime | None:
@@ -112,7 +114,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     recent_high = (
         db.execute(
             select(Job)
-            .where(Job.is_high_priority.is_(True), Job.is_active.is_(True))
+            .where(Job.is_high_priority.is_(True), visible_jobs_filter())
             .order_by(Job.discovered_at.desc())
             .limit(8)
         )
@@ -122,7 +124,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     recent_top = (
         db.execute(
             select(Job)
-            .where(Job.is_active.is_(True))
+            .where(visible_jobs_filter())
             .order_by(Job.match_score.desc(), Job.discovered_at.desc())
             .limit(8)
         )
@@ -173,8 +175,9 @@ def jobs_page(
     page: int = 1,
 ):
     page_size = 25
-    stmt = select(Job).where(Job.is_active.is_(True), Job.match_score >= min_score)
-    count_stmt = select(func.count(Job.id)).where(Job.is_active.is_(True), Job.match_score >= min_score)
+    visible = visible_jobs_filter()
+    stmt = select(Job).where(visible, Job.match_score >= min_score)
+    count_stmt = select(func.count(Job.id)).where(visible, Job.match_score >= min_score)
     if q:
         stmt = stmt.where(Job.title.ilike(f"%{q}%"))
         count_stmt = count_stmt.where(Job.title.ilike(f"%{q}%"))
@@ -254,6 +257,11 @@ def job_detail(request: Request, job_id: int, db: Session = Depends(get_db)):
         has_profile = True
     if get_profile().get("full_name"):
         has_profile = True
+    is_tracked = (
+        db.execute(select(Application.id).where(Application.job_id == job_id)).scalar()
+        is not None
+    )
+    status_badge = job_status_badge(job, is_tracked=is_tracked)
     return templates.TemplateResponse(
         request,
         "job_detail.html",
@@ -267,6 +275,8 @@ def job_detail(request: Request, job_id: int, db: Session = Depends(get_db)):
             "recruiters": recruiters,
             "has_master": has_master,
             "has_profile": has_profile,
+            "is_tracked": is_tracked,
+            "status_badge": status_badge,
         },
     )
 
@@ -293,7 +303,11 @@ def track_job(job_id: int):
 
 @router.get("/applications", response_class=HTMLResponse)
 def applications_page(request: Request, db: Session = Depends(get_db), status: str = ""):
-    stmt = select(Application).order_by(Application.updated_at.desc())
+    stmt = (
+        select(Application)
+        .options(joinedload(Application.job))
+        .order_by(Application.updated_at.desc())
+    )
     if status:
         stmt = stmt.where(Application.status == status)
     apps = db.execute(stmt).scalars().all()

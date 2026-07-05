@@ -15,18 +15,19 @@
 
 <div class="card table-wrap">
   <table class="list">
-    <tr><th>Score</th><th>Role</th><th>Company</th><th>Location</th><th>Source</th><th>Found</th></tr>
+    <tr><th>Score</th><th>Role</th><th>Company</th><th>Location</th><th>Source</th><th>Age</th></tr>
     {% for job in jobs %}
     <tr>
       <td><span class="score {{ 'hi' if job.match_score >= 70 else 'mid' if job.match_score >= 45 else 'lo' }}">{{ job.match_score|round|int }}</span></td>
       <td>
         <a href="/jobs/{{ job.id }}">{{ job.title }}</a>
         {% if job.is_high_priority %}<span class="badge hp">high priority</span>{% endif %}
+        {% if not job.is_active %}<span class="badge closed">tracked · closed</span>{% endif %}
       </td>
       <td>{{ job.company.name if job.company }}</td>
       <td>{{ job.location or '—' }}</td>
       <td class="muted small">{{ job.source }}</td>
-      <td class="muted small">{{ job.discovered_at.strftime('%d %b') if job.discovered_at }}</td>
+      <td class="muted small" title="{% if job.posted_at %}Posted {{ job.posted_at.strftime('%d %b %Y') }}{% else %}Found {{ job.discovered_at.strftime('%d %b %Y') if job.discovered_at }}{% endif %}">{{ job|job_age_label or '—' }}</td>
     </tr>
     {% else %}
     <tr><td colspan="6" class="muted">No jobs found. Add companies on the <a href="/companies">Companies</a> page, then press “Run discovery”.</td></tr>

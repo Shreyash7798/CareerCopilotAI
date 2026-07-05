@@ -16,8 +16,9 @@ from sqlalchemy.orm import Session
 from app import cv_parser, resume_engine
 from app.analytics import compute_analytics
 from app.config import data_dir, get_company_catalog, get_profile, save_profile
-from app.cover_letter_engine import generate_cover_letter
 from app.db import get_db, session_scope
+from app.cover_letter_engine import generate_cover_letter
+from app.job_visibility import job_age_dict, visible_jobs_filter
 from app.exporter import export_excel, export_google_sheets
 from app.interview_prep import build_interview_prep
 from app.models import (
@@ -76,7 +77,7 @@ def api_deploy_hook(authorization: str | None = Header(None)):
 
 
 def _job_dict(job: Job) -> dict:
-    return {
+    data = {
         "id": job.id,
         "title": job.title,
         "company": job.company.name if job.company else None,
@@ -89,6 +90,8 @@ def _job_dict(job: Job) -> dict:
         "discovered_at": job.discovered_at.isoformat() if job.discovered_at else None,
         "score_breakdown": json.loads(job.score_breakdown) if job.score_breakdown else [],
     }
+    data.update(job_age_dict(job))
+    return data
 
 
 # ---------------------------------------------------------------- pipeline
@@ -178,7 +181,7 @@ def api_jobs(
     limit: int = 100,
     offset: int = 0,
 ):
-    stmt = select(Job).where(Job.is_active.is_(True), Job.match_score >= min_score)
+    stmt = select(Job).where(visible_jobs_filter(), Job.match_score >= min_score)
     if q:
         stmt = stmt.where(Job.title.ilike(f"%{q}%"))
     if location:
