@@ -35,6 +35,12 @@ from app.models import (
 )
 from app.notifications import build_daily_summary, send_daily_summary, send_test_notification
 from app.pipeline import rescore_all_jobs, run_pipeline
+from app.startup import (
+    backfill_job_locations,
+    bootstrap_starter_pack,
+    enabled_company_count,
+    ensure_accenture,
+)
 
 router = APIRouter(prefix="/api", tags=["api"])
 
@@ -79,6 +85,54 @@ def api_run_pipeline_sync():
         "high_priority": result.high_priority,
         "deactivated": result.deactivated,
         "reactivated": result.reactivated,
+        "errors": result.errors,
+    }
+
+
+@router.post("/quick-start")
+def api_quick_start():
+    """Load starter companies if needed, backfill locations, rescore, and discover."""
+    companies_changed = 0
+    locations_backfilled = 0
+
+    with session_scope() as session:
+        if enabled_company_count(session) == 0:
+            companies_changed += bootstrap_starter_pack(session)
+        if ensure_accenture(session):
+            companies_changed += 1
+        locations_backfilled = backfill_job_locations(session)
+        if companies_changed:
+            log_activity(session, "config", f"Quick start: {companies_changed} companies configured")
+        if locations_backfilled:
+            log_activity(
+                session,
+                "discovery",
+                f"Quick start: backfilled location on {locations_backfilled} jobs",
+            )
+
+    if locations_backfilled:
+        rescore_all_jobs()
+
+    result = run_pipeline()
+
+    from sqlalchemy import func
+
+    with session_scope() as session:
+        jobs_total = session.execute(select(func.count(Job.id))).scalar() or 0
+        high_priority = (
+            session.execute(select(func.count(Job.id)).where(Job.is_high_priority.is_(True))).scalar() or 0
+        )
+        enabled = enabled_company_count(session)
+
+    return {
+        "status": "ok",
+        "companies_enabled": enabled,
+        "companies_changed": companies_changed,
+        "locations_backfilled": locations_backfilled,
+        "jobs_total": jobs_total,
+        "high_priority": high_priority,
+        "new_jobs": result.new_jobs,
+        "fetched": result.fetched,
         "errors": result.errors,
     }
 

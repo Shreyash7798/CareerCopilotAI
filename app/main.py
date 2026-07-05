@@ -13,6 +13,7 @@ from app.auth import AuthMiddleware
 from app.db import init_db
 from app.routers import api, pages
 from app.scheduler import start_scheduler, stop_scheduler
+from app.startup import schedule_startup_tasks
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,6 +27,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 async def lifespan(_: FastAPI):
     init_db()
     start_scheduler()
+    schedule_startup_tasks()
     yield
     stop_scheduler()
 

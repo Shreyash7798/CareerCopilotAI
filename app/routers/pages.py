@@ -104,7 +104,9 @@ def logout():
 def dashboard(request: Request, db: Session = Depends(get_db)):
     analytics = compute_analytics(db)
     monitored_count = db.execute(
-        select(func.count(Company.id)).where(Company.ats_type.isnot(None))
+        select(func.count(Company.id)).where(
+            Company.ats_type.isnot(None), Company.enabled.is_(True)
+        )
     ).scalar() or 0
     has_cv = db.execute(select(UserProfile)).scalars().first() is not None
     recent_high = (
@@ -112,6 +114,16 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
             select(Job)
             .where(Job.is_high_priority.is_(True), Job.is_active.is_(True))
             .order_by(Job.discovered_at.desc())
+            .limit(8)
+        )
+        .scalars()
+        .all()
+    )
+    recent_top = (
+        db.execute(
+            select(Job)
+            .where(Job.is_active.is_(True))
+            .order_by(Job.match_score.desc(), Job.discovered_at.desc())
             .limit(8)
         )
         .scalars()
@@ -140,6 +152,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
             "active": "dashboard",
             "analytics": analytics,
             "recent_high": recent_high,
+            "recent_top": recent_top,
             "recent_logs": recent_logs,
             "follow_ups": follow_ups,
             "monitored_count": monitored_count,
