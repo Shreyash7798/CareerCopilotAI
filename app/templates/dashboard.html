@@ -111,10 +111,12 @@ async function quickStart(event) {
     const res = await fetch('/api/quick-start', {method: 'POST'});
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'failed');
-    alert(`Done: ${data.jobs_total} jobs in database (${data.high_priority} high priority).` +
+    alert((data.status === 'started' ? 'Started: ' : 'Done: ') +
+          `${data.jobs_total} jobs (${data.high_priority} high priority).` +
+          (data.message ? `\n${data.message}` : '') +
           (data.companies_enabled ? `\n${data.companies_enabled} companies monitoring.` : '') +
           (data.locations_backfilled ? `\nBackfilled location on ${data.locations_backfilled} jobs.` : ''));
-    location.reload();
+    setTimeout(() => location.reload(), data.status === 'started' ? 45000 : 0);
   } catch (err) {
     alert('Quick start failed: ' + err.message);
   } finally {

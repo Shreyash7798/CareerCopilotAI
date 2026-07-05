@@ -120,8 +120,8 @@ def api_run_pipeline_sync():
 
 
 @router.post("/quick-start")
-def api_quick_start():
-    """Load starter companies if needed, backfill locations, rescore, and discover."""
+def api_quick_start(background: BackgroundTasks):
+    """Backfill locations + rescore, then run discovery in the background."""
     companies_changed = 0
     locations_backfilled = 0
 
@@ -143,8 +143,6 @@ def api_quick_start():
     if locations_backfilled:
         rescore_all_jobs()
 
-    result = run_pipeline()
-
     from sqlalchemy import func
 
     with session_scope() as session:
@@ -154,16 +152,16 @@ def api_quick_start():
         )
         enabled = enabled_company_count(session)
 
+    background.add_task(run_pipeline)
+
     return {
-        "status": "ok",
+        "status": "started",
         "companies_enabled": enabled,
         "companies_changed": companies_changed,
         "locations_backfilled": locations_backfilled,
         "jobs_total": jobs_total,
         "high_priority": high_priority,
-        "new_jobs": result.new_jobs,
-        "fetched": result.fetched,
-        "errors": result.errors,
+        "message": "Discovery running in background; refresh the dashboard in a minute.",
     }
 
 

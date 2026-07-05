@@ -35,7 +35,8 @@
   <footer class="footer">
     CareerCopilot AI · local-first ·
     <a href="/api/exports/excel/download">Download Excel</a> ·
-    <a href="/docs">API</a>
+    <a href="/docs">API</a> ·
+    <span class="muted small" id="build-rev"></span>
     <form class="inline-form" method="post" action="/logout"><button class="btn btn-sm" type="submit" style="border:none;background:none;color:var(--muted);cursor:pointer">Sign out</button></form>
   </footer>
   <script>
@@ -44,11 +45,9 @@
       const btn = document.getElementById('run-btn');
       btn.disabled = true; btn.textContent = 'Running…';
       try {
-        const res = await fetch('/api/pipeline/run-sync', {method: 'POST'});
+        const res = await fetch('/api/pipeline/run', {method: 'POST'});
         const data = await res.json();
-        alert(`Discovery finished: ${data.new_jobs} new jobs (${data.high_priority} high priority), ` +
-              `${data.duplicates} duplicates skipped.` +
-              (data.errors.length ? `\nIssues: ${data.errors.join('; ')}` : ''));
+        alert('Discovery started in the background. Refresh in a minute to see new jobs.');
         location.reload();
       } catch (err) {
         alert('Discovery failed: ' + err);
@@ -60,6 +59,10 @@
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/static/sw.js');
     }
+    fetch('/api/version').then(r => r.json()).then(d => {
+      const el = document.getElementById('build-rev');
+      if (el && d.revision) el.textContent = 'build ' + d.revision;
+    }).catch(() => {});
   </script>
   {% block scripts %}{% endblock %}
 </body>

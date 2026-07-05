@@ -12,6 +12,7 @@ app:
   port: 8000
   # Base URL used in notification links (set to your LAN/host address).
   base_url: http://localhost:8000
+  # Production example: http://161.118.184.228 — see docs/PRODUCTION-CHECKLIST.md
   # Set a password to require login (strongly recommended when the dashboard
   # is reachable from the internet). Empty = no login (local-first default).
   auth_password: ""

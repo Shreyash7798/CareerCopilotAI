@@ -104,6 +104,7 @@ _ATS_CONFIG_KEYS = (
     "job_keyword",
     "sort_by",
     "max_result_size",
+    "detail_selector",
 )
 
 

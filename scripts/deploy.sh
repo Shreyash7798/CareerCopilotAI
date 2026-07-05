@@ -21,7 +21,8 @@ log "Fetching origin/$BRANCH (was $BEFORE)"
 git fetch origin "$BRANCH"
 git reset --hard "origin/$BRANCH"
 AFTER="$(git rev-parse --short HEAD)"
-log "Now at $AFTER"
+echo "$AFTER" > "$APP_DIR/REVISION"
+log "Now at $AFTER (wrote REVISION)"
 
 if [[ ! -x "$VENV/bin/python" ]]; then
   log "Creating virtualenv at $VENV"
