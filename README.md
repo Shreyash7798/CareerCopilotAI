@@ -224,6 +224,8 @@ curl http://161.118.184.228/api/version
 Compare `revision` to the latest commit on `main`. If `/api/quick-start` returns
 404, the server is still on an old build.
 
+**Production checklist:** [docs/PRODUCTION-CHECKLIST.md](docs/PRODUCTION-CHECKLIST.md)
+
 ## Architecture
 
 ```

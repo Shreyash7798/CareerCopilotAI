@@ -3,11 +3,18 @@
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 
 from app.config import PROJECT_ROOT
 
+REVISION_FILE = PROJECT_ROOT / "REVISION"
+
 
 def git_revision() -> str:
+    if REVISION_FILE.exists():
+        text = REVISION_FILE.read_text(encoding="utf-8").strip()
+        if text:
+            return text
     try:
         return (
             subprocess.check_output(

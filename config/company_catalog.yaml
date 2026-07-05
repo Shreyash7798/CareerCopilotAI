@@ -109,6 +109,24 @@ sectors:
           link_selector: "a[href*='/careers/']"
           render: true
         caveat: Bot-protected; may not work from cloud servers.
+      - name: KPMG India
+        ats_type: careers_page
+        country: India
+        career_url: "https://kpmg.com/in/en/careers.html"
+        ats_config:
+          link_selector: "a[href*='job']"
+          render: true
+          detail_limit: 10
+        caveat: Custom careers site; JS-rendered. Test from your server before enabling.
+      - name: Grant Thornton Bharat
+        ats_type: careers_page
+        country: India
+        career_url: "https://www.grantthornton.in/en/careers/"
+        ats_config:
+          link_selector: "a[href*='career']"
+          render: true
+          detail_limit: 10
+        caveat: Custom India portal; JS-rendered. Test Connection before enabling.
 
   - name: Manufacturing & Industrial
     companies:
