@@ -10,6 +10,72 @@
 # extend via pull requests.
 
 sectors:
+  - name: LinkedIn Job Feeds
+    companies:
+      - name: LinkedIn — Consulting (Mumbai)
+        ats_type: linkedin
+        country: India
+        ats_config:
+          keywords: management consulting strategy transformation
+          location: Mumbai, Maharashtra, India
+          f_TPR: r604800
+          max_pages: 5
+          detail_limit: 20
+      - name: LinkedIn — Consulting (Pune)
+        ats_type: linkedin
+        country: India
+        ats_config:
+          keywords: management consulting strategy operations
+          location: Pune, Maharashtra, India
+          f_TPR: r604800
+          max_pages: 5
+          detail_limit: 20
+      - name: LinkedIn — Consulting (India)
+        ats_type: linkedin
+        country: India
+        ats_config:
+          keywords: consultant consulting advisory
+          location: India
+          f_TPR: r604800
+          max_pages: 5
+          detail_limit: 15
+      - name: LinkedIn — GCC & Transformation (India)
+        ats_type: linkedin
+        country: India
+        ats_config:
+          keywords: GCC global capability center business transformation
+          location: India
+          f_TPR: r604800
+          max_pages: 5
+          detail_limit: 15
+      - name: LinkedIn — Supply Chain & Operations (India)
+        ats_type: linkedin
+        country: India
+        ats_config:
+          keywords: supply chain operations manufacturing consulting
+          location: India
+          f_TPR: r604800
+          max_pages: 5
+          detail_limit: 15
+      - name: LinkedIn — Consulting (Bengaluru)
+        ats_type: linkedin
+        country: India
+        ats_config:
+          keywords: management consulting strategy
+          location: Bengaluru, Karnataka, India
+          f_TPR: r604800
+          max_pages: 5
+          detail_limit: 15
+      - name: LinkedIn — Consulting (Global)
+        ats_type: linkedin
+        country: Global
+        ats_config:
+          keywords: management consulting strategy operations
+          location: Worldwide
+          f_TPR: r604800
+          max_pages: 3
+          detail_limit: 10
+
   - name: Consulting & Advisory
     companies:
       - name: PwC
@@ -41,12 +107,11 @@ sectors:
           job_country: India
           search_text: consulting
       - name: BCG
-        ats_type: careers_page
+        ats_type: greenhouse
         country: Global
-        career_url: "https://careers.bcg.com/global/en/search-results?keywords=consultant"
         ats_config:
-          link_selector: "a[href*='/job/']"
-          render: true
+          board: bcg
+          search_text: consultant
       - name: Oliver Wyman (Marsh McLennan)
         ats_type: workday
         country: Global
@@ -127,6 +192,267 @@ sectors:
           render: true
           detail_limit: 10
         caveat: Custom India portal; JS-rendered. Test Connection before enabling.
+      - name: Accenture Global
+        ats_type: workday
+        country: Global
+        ats_config:
+          host: accenture.wd103.myworkdayjobs.com
+          tenant: accenture
+          site: AccentureCareers
+          search_text: consulting
+      - name: Thoughtworks
+        ats_type: greenhouse
+        country: Global
+        ats_config:
+          board: thoughtworks
+          search_text: consultant
+      - name: TCS (Tata Consultancy Services)
+        ats_type: greenhouse
+        country: India
+        ats_config:
+          board: tcs
+          search_text: consulting
+      - name: ZS Associates
+        ats_type: careers_page
+        country: Global
+        career_url: "https://jobs.zs.com/jobs?keywords=consultant"
+        ats_config:
+          link_selector: "a[href*='/job/']"
+          render: true
+        caveat: Custom careers portal; test from your server before enabling.
+      - name: FTI Consulting
+        ats_type: careers_page
+        country: Global
+        career_url: "https://www.fticonsulting.com/careers/job-search?search=consultant"
+        ats_config:
+          link_selector: "a[href*='job']"
+          render: true
+        caveat: Custom careers portal; test from your server before enabling.
+      - name: Huron Consulting
+        ats_type: careers_page
+        country: Global
+        career_url: "https://www.huronconsultinggroup.com/careers/job-search?search=consultant"
+        ats_config:
+          link_selector: "a[href*='job']"
+          render: true
+        caveat: Custom careers portal; test from your server before enabling.
+      - name: Simon-Kucher
+        ats_type: careers_page
+        country: Global
+        career_url: "https://www.simon-kucher.com/en/careers/job-search?search=consultant"
+        ats_config:
+          link_selector: "a[href*='job']"
+          render: true
+        caveat: Custom careers portal; test from your server before enabling.
+      - name: L.E.K. Consulting
+        ats_type: careers_page
+        country: Global
+        career_url: "https://www.lek.com/careers/search-jobs?keywords=consultant"
+        ats_config:
+          link_selector: "a[href*='job']"
+          render: true
+        caveat: Bot-protected; may not work from cloud servers.
+
+  - name: Banking & Financial Services
+    companies:
+      - name: Morgan Stanley
+        ats_type: workday
+        country: Global
+        ats_config:
+          host: ms.wd5.myworkdayjobs.com
+          tenant: ms
+          site: External
+          search_text: consulting
+      - name: Deutsche Bank
+        ats_type: workday
+        country: Global
+        ats_config:
+          host: db.wd3.myworkdayjobs.com
+          tenant: db
+          site: DBWebsite
+          search_text: consulting
+      - name: JPMorgan Chase
+        ats_type: careers_page
+        country: Global
+        career_url: "https://careers.jpmorgan.com/us/en/search-results?keywords=consulting"
+        ats_config:
+          link_selector: "a[href*='job']"
+          render: true
+        caveat: Bot-protected; may not work from cloud servers.
+      - name: Goldman Sachs
+        ats_type: careers_page
+        country: Global
+        career_url: "https://hdpc.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/jobs?keyword=consulting"
+        ats_config:
+          link_selector: "a[href*='job']"
+          render: true
+        caveat: Oracle HCM portal; JS-rendered. Test Connection before enabling.
+      - name: HSBC
+        ats_type: careers_page
+        country: Global
+        career_url: "https://mycareer.hsbc.com/en_GB/external/search?keyword=consulting"
+        ats_config:
+          link_selector: "a[href*='job']"
+          render: true
+        caveat: Custom careers portal; test from your server before enabling.
+      - name: Barclays
+        ats_type: careers_page
+        country: Global
+        career_url: "https://search.jobs.barclays/search-jobs?k=consulting"
+        ats_config:
+          link_selector: "a[href*='job']"
+          render: true
+        caveat: Custom careers portal; test from your server before enabling.
+      - name: Standard Chartered
+        ats_type: careers_page
+        country: Global
+        career_url: "https://jobs.standardchartered.com/search-jobs?k=consulting"
+        ats_config:
+          link_selector: "a[href*='job']"
+          render: true
+        caveat: Custom careers portal; test from your server before enabling.
+      - name: Citi
+        ats_type: careers_page
+        country: Global
+        career_url: "https://jobs.citi.com/search-jobs?k=consulting"
+        ats_config:
+          link_selector: "a[href*='job']"
+          render: true
+        caveat: Custom careers portal; test from your server before enabling.
+      - name: ICICI Bank
+        ats_type: careers_page
+        country: India
+        career_url: "https://www.icicicareers.com/CareerApplicant/Career/Home"
+        ats_config:
+          link_selector: "a[href*='job']"
+          render: true
+          detail_limit: 10
+        caveat: Custom India portal; JS-rendered. Test Connection before enabling.
+      - name: HDFC Bank
+        ats_type: careers_page
+        country: India
+        career_url: "https://www.hdfcbank.com/personal/about-us/careers"
+        ats_config:
+          link_selector: "a[href*='career']"
+          render: true
+        caveat: Marketing careers page; limited job links. Test before enabling.
+      - name: Axis Bank
+        ats_type: careers_page
+        country: India
+        career_url: "https://www.axisbank.com/careers"
+        ats_config:
+          link_selector: "a[href*='career']"
+          render: true
+        caveat: Marketing careers page; limited job links. Test before enabling.
+
+  - name: Indian IT & GCC
+    companies:
+      - name: Infosys India
+        ats_type: sap
+        country: India
+        career_url: "https://career.infosys.com/joblist?keyword=consulting&country=India"
+        caveat: May block cloud/datacenter IPs. Test Connection before enabling.
+      - name: Wipro India
+        ats_type: sap
+        country: India
+        career_url: "https://careers.wipro.com/search/?q=consulting&locationsearch=India"
+        caveat: May block cloud/datacenter IPs. Test Connection before enabling.
+      - name: HCLTech India
+        ats_type: careers_page
+        country: India
+        career_url: "https://www.hcltech.com/careers/job-search?keyword=consulting"
+        ats_config:
+          link_selector: "a[href*='job']"
+          render: true
+          detail_limit: 10
+        caveat: Custom careers portal; may block cloud IPs. Test before enabling.
+      - name: Cognizant India
+        ats_type: careers_page
+        country: India
+        career_url: "https://careers.cognizant.com/global-en/jobs/?keyword=consulting&location=India"
+        ats_config:
+          link_selector: "a[href*='job']"
+          render: true
+          detail_limit: 10
+        caveat: May block cloud/datacenter IPs. Test Connection before enabling.
+      - name: LTIMindtree India
+        ats_type: sap
+        country: India
+        career_url: "https://careers.ltimindtree.com/search/?q=consulting&locationsearch=India"
+        caveat: May block cloud/datacenter IPs. Test Connection before enabling.
+      - name: Tech Mahindra India
+        ats_type: careers_page
+        country: India
+        career_url: "https://careers.techmahindra.com/search/?q=consulting&locationsearch=India"
+        ats_config:
+          link_selector: "a.jobTitle-link"
+          render: false
+        caveat: Custom careers portal; test from your server before enabling.
+      - name: Genpact India
+        ats_type: taleo
+        country: India
+        career_url: "https://genpact.taleo.net/careersection/sgy_external_career_section/jobsearch.ftl"
+        caveat: Taleo portal; JS-rendered. Test Connection before enabling.
+      - name: Mphasis India
+        ats_type: sap
+        country: India
+        career_url: "https://careers.mphasis.com/search/?q=consulting&locationsearch=India"
+        caveat: May block cloud/datacenter IPs. Test Connection before enabling.
+      - name: Persistent Systems
+        ats_type: careers_page
+        country: India
+        career_url: "https://careers.persistent.com/search/?q=consulting&locationsearch=India"
+        ats_config:
+          link_selector: "a.jobTitle-link"
+          render: false
+        caveat: Custom careers portal; test from your server before enabling.
+
+  - name: Indian Digital & Fintech
+    companies:
+      - name: PhonePe
+        ats_type: greenhouse
+        country: India
+        ats_config:
+          board: phonepe
+      - name: Paytm
+        ats_type: lever
+        country: India
+        ats_config:
+          board: paytm
+      - name: Postman
+        ats_type: greenhouse
+        country: India
+        ats_config:
+          board: postman
+      - name: Meesho
+        ats_type: lever
+        country: India
+        ats_config:
+          board: meesho
+      - name: CRED
+        ats_type: lever
+        country: India
+        ats_config:
+          board: cred
+
+  - name: FMCG & Consumer
+    companies:
+      - name: Procter & Gamble
+        ats_type: workday
+        country: Global
+        ats_config:
+          host: pg.wd5.myworkdayjobs.com
+          tenant: pg
+          site: "1000"
+          search_text: consulting
+      - name: Unilever
+        ats_type: workday
+        country: Global
+        ats_config:
+          host: unilever.wd3.myworkdayjobs.com
+          tenant: unilever
+          site: Unilever_Experienced_Professionals
+          search_text: consulting
 
   - name: Manufacturing & Industrial
     companies:
@@ -153,6 +479,14 @@ sectors:
           host: cat.wd5.myworkdayjobs.com
           tenant: cat
           site: CaterpillarCareers
+      - name: Intel
+        ats_type: workday
+        country: Global
+        ats_config:
+          host: intel.wd1.myworkdayjobs.com
+          tenant: intel
+          site: External
+          search_text: consulting
 
   - name: Technology
     companies:
@@ -232,3 +566,58 @@ sectors:
         country: Global
         ats_config:
           board: palantir
+      - name: MongoDB
+        ats_type: greenhouse
+        country: Global
+        ats_config:
+          board: mongodb
+      - name: Datadog
+        ats_type: greenhouse
+        country: Global
+        ats_config:
+          board: datadog
+      - name: Twilio
+        ats_type: greenhouse
+        country: Global
+        ats_config:
+          board: twilio
+      - name: Okta
+        ats_type: greenhouse
+        country: Global
+        ats_config:
+          board: okta
+      - name: Elastic
+        ats_type: greenhouse
+        country: Global
+        ats_config:
+          board: elastic
+      - name: GitLab
+        ats_type: greenhouse
+        country: Global
+        ats_config:
+          board: gitlab
+      - name: Block (Square)
+        ats_type: greenhouse
+        country: Global
+        ats_config:
+          board: block
+      - name: Robinhood
+        ats_type: greenhouse
+        country: Global
+        ats_config:
+          board: robinhood
+      - name: Zscaler
+        ats_type: greenhouse
+        country: Global
+        ats_config:
+          board: zscaler
+      - name: Reddit
+        ats_type: greenhouse
+        country: Global
+        ats_config:
+          board: reddit
+      - name: Pinterest
+        ats_type: greenhouse
+        country: Global
+        ats_config:
+          board: pinterest

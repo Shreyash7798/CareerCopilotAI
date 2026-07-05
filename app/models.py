@@ -37,6 +37,7 @@ ATS_TYPES = [
     "oracle",
     "taleo",
     "careers_page",
+    "linkedin",
 ]
 
 COMPANY_PRIORITIES = ["high", "normal", "low"]

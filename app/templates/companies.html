@@ -19,7 +19,9 @@
   <label class="f">Workday host <input name="host" value="{{ cfg.host if cfg and cfg.host else '' }}" placeholder="x.wd1.myworkdayjobs.com"></label>
   <label class="f">Workday tenant <input name="tenant" value="{{ cfg.tenant if cfg and cfg.tenant else '' }}"></label>
   <label class="f">Workday site <input name="site" value="{{ cfg.site if cfg and cfg.site else '' }}"></label>
-  <label class="f">Search text <input name="search_text" value="{{ cfg.search_text if cfg and cfg.search_text else '' }}" placeholder="keyword filter (accenture/workday/smartrecruiters)"></label>
+  <label class="f">Search text <input name="search_text" value="{{ cfg.search_text if cfg and cfg.search_text else '' }}" placeholder="keyword filter (workday/linkedin/accenture)"></label>
+  <label class="f">LinkedIn location <input name="location" value="{{ cfg.location if cfg and cfg.location else '' }}" placeholder="Mumbai, Maharashtra, India"></label>
+  <label class="f">LinkedIn posted within <input name="f_TPR" value="{{ cfg.f_TPR if cfg and cfg.f_TPR else '' }}" placeholder="r604800 = past week"></label>
   <label class="f">Link selector <input name="link_selector" value="{{ cfg.link_selector if cfg and cfg.link_selector else '' }}" placeholder="CSS selector for job links"></label>
   <label class="f">Keywords <input name="keywords" value="{{ c.keywords or '' if c else '' }}" placeholder="comma-separated title filter"></label>
   <label class="f">Refresh interval (min) <input name="refresh_interval_minutes" type="number" min="15" value="{{ c.refresh_interval_minutes or '' if c else '' }}" placeholder="blank = every run"></label>

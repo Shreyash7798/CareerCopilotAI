@@ -13,6 +13,7 @@ from app.sources import (
     careers_page,
     greenhouse,
     lever,
+    linkedin,
     smartrecruiters,
     workday,
 )
@@ -25,6 +26,7 @@ REGISTRY: dict[str, Callable[[dict], list[RawJob]]] = {
     "workday": workday.fetch,
     "smartrecruiters": smartrecruiters.fetch,
     "careers_page": careers_page.fetch,
+    "linkedin": linkedin.fetch,
 }
 
 __all__ = ["REGISTRY", "RawJob", "SourceError"]

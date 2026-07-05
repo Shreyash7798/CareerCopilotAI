@@ -171,6 +171,22 @@ def api_quick_start(background: BackgroundTasks):
 # ---------------------------------------------------------------- jobs
 
 
+class LinkedInImportIn(BaseModel):
+    url: str
+
+
+@router.post("/jobs/import-linkedin")
+def api_import_linkedin(payload: LinkedInImportIn):
+    from app.linkedin_import import import_linkedin_job
+
+    try:
+        return import_linkedin_job(payload.url)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(400, str(exc)) from exc
+
+
 @router.get("/jobs")
 def api_jobs(
     db: Session = Depends(get_db),

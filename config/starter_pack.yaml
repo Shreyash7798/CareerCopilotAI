@@ -1,15 +1,29 @@
 # Companies loaded automatically on first run when no enabled monitors exist.
 # Every entry uses a public JSON API (no Playwright, no bot protection).
 companies:
+  - sector: LinkedIn Job Feeds
+    name: LinkedIn — Consulting (Mumbai)
+  - sector: LinkedIn Job Feeds
+    name: LinkedIn — Consulting (Pune)
   - sector: Consulting & Advisory
     name: Accenture India
   - sector: Consulting & Advisory
     name: PwC
+  - sector: Consulting & Advisory
+    name: TCS (Tata Consultancy Services)
+  - sector: Consulting & Advisory
+    name: Thoughtworks
   - sector: Consulting & Advisory
     name: Roland Berger
   - sector: Consulting & Advisory
     name: BearingPoint
   - sector: Consulting & Advisory
     name: Protiviti India
+  - sector: Indian Digital & Fintech
+    name: PhonePe
+  - sector: Banking & Financial Services
+    name: Morgan Stanley
+  - sector: FMCG & Consumer
+    name: Unilever
   - sector: Technology
     name: Stripe
