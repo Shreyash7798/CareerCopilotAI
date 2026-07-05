@@ -6,10 +6,20 @@ companies:
   - sector: Consulting & Advisory
     name: PwC
   - sector: Consulting & Advisory
+    name: TCS (Tata Consultancy Services)
+  - sector: Consulting & Advisory
+    name: Thoughtworks
+  - sector: Consulting & Advisory
     name: Roland Berger
   - sector: Consulting & Advisory
     name: BearingPoint
   - sector: Consulting & Advisory
     name: Protiviti India
+  - sector: Indian Digital & Fintech
+    name: PhonePe
+  - sector: Banking & Financial Services
+    name: Morgan Stanley
+  - sector: FMCG & Consumer
+    name: Unilever
   - sector: Technology
     name: Stripe
