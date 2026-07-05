@@ -19,7 +19,7 @@ Use this after deploying to Oracle Cloud or any public host.
 - [ ] `curl http://<your-ip>/api/version` returns a git revision (not `unknown` or 404)
 - [ ] Footer shows **build &lt;revision&gt;** on the dashboard
 - [ ] Cron auto-pull running: `crontab -l` shows `scripts/deploy.sh`
-- [ ] Optional GitHub Actions secrets: `OCI_HOST`, `OCI_USER`, `OCI_SSH_KEY`
+- [ ] Optional GitHub Actions secrets: `OCI_HOST`, `OCI_USER`, `OCI_SSH_KEY` (or run `bash scripts/print-github-secrets.sh` on the VM)
 
 ## Discovery quality
 
