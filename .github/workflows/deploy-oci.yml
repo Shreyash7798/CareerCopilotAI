@@ -1,0 +1,40 @@
+# Deploy to Oracle Cloud when main is updated (merge a PR).
+#
+# Add GitHub Actions secrets (repo → Settings → Secrets → Actions):
+#   OCI_HOST     161.118.184.228
+#   OCI_USER     ubuntu
+#   OCI_SSH_KEY  deploy private key (see scripts/setup-oci-deploy.sh)
+#
+# No secrets? Run scripts/setup-oci-deploy.sh once on the VM instead (cron auto-pull).
+
+name: Deploy to OCI
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-oci
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.OCI_HOST }}
+          username: ${{ secrets.OCI_USER }}
+          key: ${{ secrets.OCI_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            APP_DIR="/home/ubuntu/CareerCopilotAI"
+            cd "$APP_DIR"
+            git fetch origin main
+            git reset --hard origin/main
+            chmod +x scripts/deploy.sh
+            ./scripts/deploy.sh
+            curl -fsS http://127.0.0.1:8000/api/version

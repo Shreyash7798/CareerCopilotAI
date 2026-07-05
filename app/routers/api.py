@@ -42,7 +42,15 @@ from app.startup import (
     ensure_accenture,
 )
 
+from app.version import deploy_info
+
 router = APIRouter(prefix="/api", tags=["api"])
+
+
+@router.get("/version")
+def api_version():
+    """Deployed git revision — use to confirm OCI pulled the latest main."""
+    return deploy_info()
 
 
 def _job_dict(job: Job) -> dict:
