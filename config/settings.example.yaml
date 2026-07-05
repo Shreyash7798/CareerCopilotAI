@@ -15,6 +15,9 @@ app:
   # Set a password to require login (strongly recommended when the dashboard
   # is reachable from the internet). Empty = no login (local-first default).
   auth_password: ""
+  # Shared secret for POST /api/deploy/hook (GitHub Actions can deploy without SSH).
+  # Generate: python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+  deploy_token: ""
 
 scheduler:
   enabled: true

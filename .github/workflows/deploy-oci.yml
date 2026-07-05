@@ -1,11 +1,12 @@
-# Deploy to Oracle Cloud when main is updated (merge a PR).
+# Deploy to Oracle Cloud when main is updated.
 #
-# Add GitHub Actions secrets (repo → Settings → Secrets → Actions):
-#   OCI_HOST     161.118.184.228
-#   OCI_USER     ubuntu
-#   OCI_SSH_KEY  deploy private key (see scripts/setup-oci-deploy.sh)
+# Option A — SSH (add secrets OCI_HOST, OCI_USER, OCI_SSH_KEY)
+# Option B — HTTP hook (add secrets DEPLOY_HOOK_URL, DEPLOY_TOKEN)
+#   DEPLOY_HOOK_URL = http://161.118.184.228/api/deploy/hook
+#   DEPLOY_TOKEN    = same value as app.deploy_token in config/settings.yaml on the VM
 #
-# No secrets? Run scripts/setup-oci-deploy.sh once on the VM instead (cron auto-pull).
+# First-time bootstrap still needs one manual SSH:
+#   cd ~/CareerCopilotAI && git pull origin main && ./scripts/deploy.sh
 
 name: Deploy to OCI
 
@@ -19,7 +20,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  deploy-ssh:
+    if: ${{ secrets.OCI_HOST != '' }}
     runs-on: ubuntu-latest
     steps:
       - name: Deploy over SSH
@@ -38,3 +40,23 @@ jobs:
             chmod +x scripts/deploy.sh
             ./scripts/deploy.sh
             curl -fsS http://127.0.0.1:8000/api/version
+
+  deploy-hook:
+    if: ${{ secrets.OCI_HOST == '' && secrets.DEPLOY_HOOK_URL != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via HTTP hook
+        run: |
+          curl -fsS -X POST "${{ secrets.DEPLOY_HOOK_URL }}" \
+            -H "Authorization: Bearer ${{ secrets.DEPLOY_TOKEN }}"
+
+  deploy-missing:
+    if: ${{ secrets.OCI_HOST == '' && secrets.DEPLOY_HOOK_URL == '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: No deploy credentials configured
+        run: |
+          echo "::error::Configure either SSH secrets (OCI_HOST, OCI_USER, OCI_SSH_KEY)"
+          echo "::error::or HTTP hook secrets (DEPLOY_HOOK_URL, DEPLOY_TOKEN)."
+          echo "::error::Or SSH to the VM once: cd ~/CareerCopilotAI && git pull && ./scripts/deploy.sh"
+          exit 1
