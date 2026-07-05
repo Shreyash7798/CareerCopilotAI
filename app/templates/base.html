@@ -23,6 +23,7 @@
     <a href="/jobs" class="{{ 'on' if active == 'jobs' }}">Jobs</a>
     <a href="/applications" class="{{ 'on' if active == 'applications' }}">Tracker</a>
     <a href="/companies" class="{{ 'on' if active == 'companies' }}">Companies</a>
+    <a href="/analytics" class="{{ 'on' if active == 'analytics' }}">Analytics</a>
     <a href="/recruiters" class="{{ 'on' if active == 'recruiters' }}">Recruiters</a>
     <a href="/profile" class="{{ 'on' if active == 'profile' }}">Profile</a>
     <a href="/settings" class="{{ 'on' if active == 'settings' }}">Settings</a>
@@ -35,6 +36,7 @@
     CareerCopilot AI · local-first ·
     <a href="/api/exports/excel/download">Download Excel</a> ·
     <a href="/docs">API</a>
+    <form class="inline-form" method="post" action="/logout"><button class="btn btn-sm" type="submit" style="border:none;background:none;color:var(--muted);cursor:pointer">Sign out</button></form>
   </footer>
   <script>
     async function runPipeline(event) {

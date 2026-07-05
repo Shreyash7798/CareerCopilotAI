@@ -24,7 +24,29 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+# ATS platforms the discovery pipeline can monitor. 'oracle', 'sap' and
+# 'taleo' are handled through the generic careers-page connector with
+# platform-appropriate defaults (see app/company_sources.py).
+ATS_TYPES = [
+    "accenture",
+    "greenhouse",
+    "lever",
+    "workday",
+    "smartrecruiters",
+    "sap",
+    "oracle",
+    "taleo",
+    "careers_page",
+]
+
+COMPANY_PRIORITIES = ["high", "normal", "low"]
+
+
 class Company(Base):
+    """A company is both an employer-intelligence record (auto-created when
+    jobs are discovered) and, when `ats_type` is set, a discovery source that
+    the pipeline polls. This replaces routine editing of sources.yaml."""
+
     __tablename__ = "companies"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -36,8 +58,29 @@ class Company(Base):
     is_preferred: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
+    # --- discovery-source configuration (Company Management MVP) ---
+    ats_type: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    career_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    # JSON: ATS-specific params (board, host/tenant/site, link_selector, render…)
+    ats_config: Mapped[str | None] = mapped_column(Text, nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    refresh_interval_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    priority: Mapped[str] = mapped_column(String(16), default="normal")
+    country: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    sector: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Comma-separated; when set, only job titles containing one of these terms
+    # are kept for this company.
+    keywords: Mapped[str | None] = mapped_column(Text, nullable=True)
+    recruiter_search_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_run_status: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
     jobs: Mapped[list["Job"]] = relationship(back_populates="company")
     recruiters: Mapped[list["Recruiter"]] = relationship(back_populates="company")
+
+    @property
+    def is_source(self) -> bool:
+        return bool(self.ats_type)
 
 
 class Job(Base):
@@ -116,10 +159,20 @@ class Resume(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     job_id: Mapped[int | None] = mapped_column(ForeignKey("jobs.id"), nullable=True)
-    kind: Mapped[str] = mapped_column(String(32), default="tailored")  # master | tailored
+    # master | tailored | cover_letter
+    kind: Mapped[str] = mapped_column(String(32), default="tailored")
     file_path: Mapped[str] = mapped_column(String(1024))
     pdf_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     matched_keywords: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class InterviewPrep(Base):
+    __tablename__ = "interview_preps"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"), index=True)
+    content_json: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 

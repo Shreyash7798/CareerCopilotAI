@@ -1,0 +1,15 @@
+# Companies loaded automatically on first run when no enabled monitors exist.
+# Every entry uses a public JSON API (no Playwright, no bot protection).
+companies:
+  - sector: Consulting & Advisory
+    name: Accenture India
+  - sector: Consulting & Advisory
+    name: PwC
+  - sector: Consulting & Advisory
+    name: Roland Berger
+  - sector: Consulting & Advisory
+    name: BearingPoint
+  - sector: Consulting & Advisory
+    name: Protiviti India
+  - sector: Technology
+    name: Stripe

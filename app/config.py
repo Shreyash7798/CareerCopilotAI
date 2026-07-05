@@ -21,6 +21,7 @@ SETTINGS_FILE = CONFIG_DIR / "settings.yaml"
 SETTINGS_EXAMPLE_FILE = CONFIG_DIR / "settings.example.yaml"
 SOURCES_FILE = CONFIG_DIR / "sources.yaml"
 SOURCES_EXAMPLE_FILE = CONFIG_DIR / "sources.example.yaml"
+CATALOG_FILE = CONFIG_DIR / "company_catalog.yaml"
 
 _lock = threading.Lock()
 _settings_cache: dict[str, Any] | None = None
@@ -49,6 +50,12 @@ def get_settings(refresh: bool = False) -> dict[str, Any]:
         return copy.deepcopy(_settings_cache)
 
 
+def sources_yaml_exists() -> bool:
+    """True only when the user actually created a sources.yaml (the example
+    fallback must not be auto-imported into the companies table)."""
+    return SOURCES_FILE.exists()
+
+
 def get_sources_config(refresh: bool = False) -> dict[str, Any]:
     global _sources_cache
     with _lock:
@@ -74,6 +81,13 @@ def save_sources_config(sources: dict[str, Any]) -> None:
         with SOURCES_FILE.open("w", encoding="utf-8") as fh:
             yaml.safe_dump(sources, fh, sort_keys=False, allow_unicode=True)
         _sources_cache = copy.deepcopy(sources)
+
+
+def get_company_catalog() -> dict[str, Any]:
+    """Curated, pre-verified companies grouped by sector (ships with the app)."""
+    if not CATALOG_FILE.exists():
+        return {"sectors": []}
+    return _load_yaml(CATALOG_FILE)
 
 
 def get_profile() -> dict[str, Any]:

@@ -1,0 +1,216 @@
+# Company catalog: curated, pre-verified companies users can add to their
+# monitored list with one click from the dashboard (Companies -> catalog).
+#
+# Every entry was verified against the live endpoint (API returns jobs / page
+# returns job links). Entries with `caveat` may not work from datacenter IPs
+# (bot protection) but often work from residential connections — they are
+# added disabled so users can test them with the Test Connection button.
+#
+# This file is data, not user config: it ships with the app and is safe to
+# extend via pull requests.
+
+sectors:
+  - name: Consulting & Advisory
+    companies:
+      - name: PwC
+        ats_type: workday
+        country: Global
+        ats_config:
+          host: pwc.wd3.myworkdayjobs.com
+          tenant: pwc
+          site: Global_Experienced_Careers
+          search_text: consulting
+      - name: Deloitte India
+        ats_type: sap
+        country: India
+        career_url: "https://southasiacareers.deloitte.com/search/?q=consulting"
+      - name: EY India
+        ats_type: sap
+        country: India
+        career_url: "https://careers.ey.com/ey/search/?q=consulting&locationsearch=India"
+      - name: Capgemini
+        ats_type: sap
+        country: India
+        career_url: "https://careers.capgemini.com/search/?q=consultant&locationsearch=india"
+      - name: Accenture India
+        ats_type: accenture
+        country: India
+        ats_config:
+          country_site: in-en
+          job_language: en
+          job_country: India
+          search_text: consulting
+      - name: BCG
+        ats_type: careers_page
+        country: Global
+        career_url: "https://careers.bcg.com/global/en/search-results?keywords=consultant"
+        ats_config:
+          link_selector: "a[href*='/job/']"
+          render: true
+      - name: Oliver Wyman (Marsh McLennan)
+        ats_type: workday
+        country: Global
+        ats_config:
+          host: mmc.wd1.myworkdayjobs.com
+          tenant: mmc
+          site: Careers
+          search_text: Oliver Wyman
+      - name: Roland Berger
+        ats_type: smartrecruiters
+        country: Global
+        ats_config:
+          board: rolandberger
+          search_text: consultant
+      - name: Protiviti India
+        ats_type: workday
+        country: India
+        ats_config:
+          host: roberthalf.wd1.myworkdayjobs.com
+          tenant: roberthalf
+          site: ProtivitiIndia
+      - name: Protiviti APAC
+        ats_type: workday
+        country: APAC
+        ats_config:
+          host: roberthalf.wd1.myworkdayjobs.com
+          tenant: roberthalf
+          site: ProtivitiAPAC
+      - name: BearingPoint
+        ats_type: greenhouse
+        country: Europe
+        ats_config:
+          board: bearingpoint
+      - name: McKinsey
+        ats_type: careers_page
+        country: Global
+        career_url: "https://www.mckinsey.com/careers/search-jobs?query=consultant"
+        ats_config:
+          link_selector: "a[href*='/careers/search-jobs/jobs/']"
+          render: true
+        caveat: Bot-protected; may not work from cloud servers.
+      - name: Bain & Company
+        ats_type: careers_page
+        country: Global
+        career_url: "https://www.bain.com/careers/find-a-role/?searchterm=consultant"
+        ats_config:
+          link_selector: "a[href*='jobid=']"
+          render: true
+        caveat: Bot-protected; may not work from cloud servers.
+      - name: Kearney
+        ats_type: taleo
+        country: Global
+        career_url: "https://www.kearney.com/careers"
+        caveat: Bot-protected; may not work from cloud servers.
+      - name: Alvarez & Marsal
+        ats_type: careers_page
+        country: Global
+        career_url: "https://www.alvarezandmarsal.com/careers"
+        ats_config:
+          link_selector: "a[href*='/careers/']"
+          render: true
+        caveat: Bot-protected; may not work from cloud servers.
+
+  - name: Manufacturing & Industrial
+    companies:
+      - name: Cummins
+        ats_type: oracle
+        country: Global
+        career_url: "https://hub.cummins.jobs/jobs/?q=process%20excellence"
+      - name: Bosch Group
+        ats_type: smartrecruiters
+        country: Global
+        ats_config:
+          board: BoschGroup
+      - name: 3M
+        ats_type: workday
+        country: Global
+        ats_config:
+          host: 3m.wd1.myworkdayjobs.com
+          tenant: 3m
+          site: Search
+      - name: Caterpillar
+        ats_type: workday
+        country: Global
+        ats_config:
+          host: cat.wd5.myworkdayjobs.com
+          tenant: cat
+          site: CaterpillarCareers
+
+  - name: Technology
+    companies:
+      - name: Salesforce
+        ats_type: workday
+        country: Global
+        ats_config:
+          host: salesforce.wd12.myworkdayjobs.com
+          tenant: salesforce
+          site: External_Career_Site
+      - name: Adobe
+        ats_type: workday
+        country: Global
+        ats_config:
+          host: adobe.wd5.myworkdayjobs.com
+          tenant: adobe
+          site: external_experienced
+      - name: NVIDIA
+        ats_type: workday
+        country: Global
+        ats_config:
+          host: nvidia.wd5.myworkdayjobs.com
+          tenant: nvidia
+          site: NVIDIAExternalCareerSite
+      - name: Stripe
+        ats_type: greenhouse
+        country: Global
+        ats_config:
+          board: stripe
+      - name: Airbnb
+        ats_type: greenhouse
+        country: Global
+        ats_config:
+          board: airbnb
+      - name: Databricks
+        ats_type: greenhouse
+        country: Global
+        ats_config:
+          board: databricks
+      - name: Cloudflare
+        ats_type: greenhouse
+        country: Global
+        ats_config:
+          board: cloudflare
+      - name: Coinbase
+        ats_type: greenhouse
+        country: Global
+        ats_config:
+          board: coinbase
+      - name: Figma
+        ats_type: greenhouse
+        country: Global
+        ats_config:
+          board: figma
+      - name: Asana
+        ats_type: greenhouse
+        country: Global
+        ats_config:
+          board: asana
+      - name: Duolingo
+        ats_type: greenhouse
+        country: Global
+        ats_config:
+          board: duolingo
+      - name: Netflix
+        ats_type: lever
+        country: Global
+        ats_config:
+          board: netflix
+      - name: Spotify
+        ats_type: lever
+        country: Global
+        ats_config:
+          board: spotify
+      - name: Palantir
+        ats_type: lever
+        country: Global
+        ats_config:
+          board: palantir

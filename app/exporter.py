@@ -120,3 +120,69 @@ def export_excel(path: str | None = None) -> Path:
             frame.to_excel(writer, sheet_name=sheet, index=False)
     logger.info("Excel export written to %s", target)
     return target
+
+
+def _prepare_frame(frame: pd.DataFrame) -> list[list]:
+    """Turn a DataFrame into sheet rows with Excel-safe cell values."""
+    if frame.empty:
+        return []
+    out = frame.copy()
+    for col in out.columns:
+        if out[col].dtype == object:
+            out[col] = out[col].map(lambda v: v[:32000] if isinstance(v, str) else v)
+    out = out.astype(object).where(pd.notnull(out), "")
+    for col in out.columns:
+        out[col] = out[col].map(lambda v: v.isoformat() if hasattr(v, "isoformat") else v)
+    return [list(out.columns), *out.values.tolist()]
+
+
+def export_google_sheets() -> str | None:
+    """Optional sync to Google Sheets (disabled by default). Returns spreadsheet ID."""
+    settings = get_settings()
+    cfg = (settings.get("exports", {}) or {}).get("google_sheets", {}) or {}
+    if not cfg.get("enabled"):
+        return None
+
+    creds_file = (cfg.get("credentials_file") or "").strip()
+    spreadsheet_id = (cfg.get("spreadsheet_id") or "").strip()
+    if not creds_file or not spreadsheet_id:
+        raise ValueError("google_sheets.credentials_file and spreadsheet_id are required when enabled")
+
+    creds_path = Path(creds_file)
+    if not creds_path.is_absolute():
+        creds_path = PROJECT_ROOT / creds_path
+    if not creds_path.exists():
+        raise FileNotFoundError(f"Google Sheets credentials not found: {creds_path}")
+
+    try:
+        import gspread
+        from google.oauth2.service_account import Credentials
+    except ImportError as exc:
+        raise ImportError("Install gspread and google-auth to use Google Sheets export") from exc
+
+    scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+    creds = Credentials.from_service_account_file(str(creds_path), scopes=scopes)
+    gc = gspread.authorize(creds)
+    spreadsheet = gc.open_by_key(spreadsheet_id)
+
+    with session_scope() as session:
+        frames = {
+            "Jobs": _jobs_frame(session),
+            "Companies": _companies_frame(session),
+            "Recruiters": _recruiters_frame(session),
+            "Applications": _applications_frame(session),
+        }
+
+    for sheet_name, frame in frames.items():
+        try:
+            worksheet = spreadsheet.worksheet(sheet_name)
+        except gspread.WorksheetNotFound:
+            worksheet = spreadsheet.add_worksheet(title=sheet_name, rows=1000, cols=20)
+        rows = _prepare_frame(frame)
+        if not rows:
+            rows = [["info"], [f"No {sheet_name.lower()} yet"]]
+        worksheet.clear()
+        worksheet.update(rows, value_input_option="USER_ENTERED")
+
+    logger.info("Google Sheets export synced to %s", spreadsheet_id)
+    return spreadsheet_id

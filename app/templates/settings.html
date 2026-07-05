@@ -32,7 +32,8 @@
       {% endfor %}
       <tr><td class="muted">High-priority threshold</td><td>{{ settings.scoring.high_priority_threshold }}</td></tr>
     </table>
-    <p class="small muted mt">Edit weights in <code>config/settings.yaml</code>. Scores are deterministic and fully explained per job.</p>
+    <p class="small muted mt">Edit weights in <code>config/settings.yaml</code>. Scores are deterministic and fully explained per job. Saving the profile above re-scores all jobs automatically; you can also trigger it manually.</p>
+    <button class="btn" onclick="rescoreJobs(this)">Re-score all jobs now</button>
   </div>
 
   <div class="card">
@@ -44,26 +45,44 @@
       <tr><td class="muted">Telegram</td><td>{{ 'enabled' if settings.notifications.telegram.enabled else 'disabled' }}</td></tr>
       <tr><td class="muted">Email</td><td>{{ 'enabled' if settings.notifications.email.enabled else 'disabled' }}</td></tr>
     </table>
-    <p class="small muted mt">Configure channels in <code>config/settings.yaml</code> (bot token / SMTP credentials stay on your machine).</p>
+    <p class="small muted mt">Configure channels in <code>config/settings.yaml</code> (bot token / SMTP credentials stay on your machine). A short check-in is sent after every scheduled discovery run; disable with <code>notifications.run_summary: false</code>. Set <code>scheduler.timezone</code> (e.g. <code>Asia/Kolkata</code>) so the daily summary arrives at your local time.</p>
+    <button class="btn" onclick="testNotifications(this)">Send test notification</button>
     <button class="btn" onclick="fetch('/api/summary/daily/send', {method:'POST'}).then(() => alert('Daily summary sent (check configured channels / activity log).'))">Send daily summary now</button>
   </div>
 </div>
 
 <div class="card">
   <h2>Job sources</h2>
-  <div class="table-wrap">
-    <table class="list">
-      <tr><th>Type</th><th>Company</th><th>Details</th><th>Enabled</th></tr>
-      {% for s in sources.sources %}
-      <tr>
-        <td>{{ s.type }}</td>
-        <td>{{ s.company }}</td>
-        <td class="small muted">{{ s.board or s.url or s.host or '' }}</td>
-        <td>{{ 'yes' if s.enabled else 'no' }}</td>
-      </tr>
-      {% endfor %}
-    </table>
-  </div>
-  <p class="small muted mt">Add or edit sources in <code>config/sources.yaml</code> — Greenhouse and Lever boards need just the board token; Workday needs host/tenant/site; generic pages take a URL and CSS selector (with optional Playwright rendering).</p>
+  <p class="small">Companies to monitor are managed on the <a href="/companies">Companies</a> page — add from the catalog or configure any Greenhouse, Lever, Workday, SmartRecruiters, SAP, Oracle, Taleo or generic careers page. No config files needed.</p>
+  <p class="small muted">A legacy <code>config/sources.yaml</code>, if present, is imported into the Companies table automatically on the next discovery run.</p>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function rescoreJobs(btn) {
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/jobs/rescore', {method: 'POST'});
+    const d = await res.json();
+    alert(`Re-scored ${d.rescored} jobs against your current profile.`);
+  } catch (err) {
+    alert('Re-score failed: ' + err);
+  } finally { btn.disabled = false; }
+}
+
+async function testNotifications(btn) {
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/notifications/test', {method: 'POST'});
+    const d = await res.json();
+    alert(
+      `Telegram: ${d.telegram_enabled ? (d.telegram_sent ? 'sent' : 'FAILED (check token/chat id)') : 'disabled'}\n` +
+      `Email: ${d.email_enabled ? (d.email_sent ? 'sent' : 'FAILED (check SMTP settings)') : 'disabled'}`
+    );
+  } catch (err) {
+    alert('Test failed: ' + err);
+  } finally { btn.disabled = false; }
+}
+</script>
 {% endblock %}

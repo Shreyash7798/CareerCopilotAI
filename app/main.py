@@ -9,9 +9,11 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from app.auth import AuthMiddleware
 from app.db import init_db
 from app.routers import api, pages
 from app.scheduler import start_scheduler, stop_scheduler
+from app.startup import schedule_startup_tasks
 
 logging.basicConfig(
     level=logging.INFO,
@@ -25,6 +27,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 async def lifespan(_: FastAPI):
     init_db()
     start_scheduler()
+    schedule_startup_tasks()
     yield
     stop_scheduler()
 
@@ -36,6 +39,7 @@ def create_app() -> FastAPI:
         description="Personal career intelligence and automation platform.",
         lifespan=lifespan,
     )
+    app.add_middleware(AuthMiddleware)
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
     app.include_router(api.router)
     app.include_router(pages.router)

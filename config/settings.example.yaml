@@ -12,13 +12,28 @@ app:
   port: 8000
   # Base URL used in notification links (set to your LAN/host address).
   base_url: http://localhost:8000
+  # Set a password to require login (strongly recommended when the dashboard
+  # is reachable from the internet). Empty = no login (local-first default).
+  auth_password: ""
 
 scheduler:
   enabled: true
   # How often the discovery pipeline runs (minutes).
-  discovery_interval_minutes: 180
-  # Time of day (24h, local server time) for the daily summary notification.
+  discovery_interval_minutes: 60
+  # Time of day (24h) for the daily summary notification.
   daily_summary_time: "08:30"
+  # IANA timezone for the daily summary (cloud servers usually run UTC).
+  # Example: Asia/Kolkata. Leave empty to use the server's local time.
+  timezone: ""
+
+bootstrap:
+  # On startup: load starter companies when none are enabled, add Accenture India,
+  # backfill Mumbai/Pune from job titles, rescore, and run discovery when needed.
+  enabled: true
+  starter_pack_on_first_run: true
+  ensure_accenture: true
+  backfill_locations_on_startup: true
+  run_discovery_on_startup: true
 
 profile:
   # This block is auto-populated when you upload a CV, but you can edit it
@@ -98,6 +113,13 @@ scoring:
     - vice president
 
 notifications:
+  # Send a short check-in message after every scheduled discovery run, even
+  # when nothing new was found (heartbeat so you know the system is alive).
+  run_summary: true
+  # Also send the check-in by email (Telegram only by default).
+  run_summary_email: false
+  # Daily reminder for application follow-ups that are due or overdue.
+  followup_reminders: true
   telegram:
     enabled: false
     # Create a bot with @BotFather, then set the token and your chat id.
@@ -118,8 +140,10 @@ exports:
     enabled: true
     path: data/careercopilot.xlsx
   google_sheets:
-    # Optional; requires a service-account JSON. Left disabled by default to
-    # keep the zero-cost, local-first promise.
+    # Optional; requires a service-account JSON and sharing the spreadsheet
+    # with that service account email. Left disabled by default to keep the
+    # zero-cost, local-first promise. Sync runs after every pipeline cycle
+    # when enabled (same four tabs as the Excel export).
     enabled: false
-    credentials_file: ""
+    credentials_file: config/google-service-account.json
     spreadsheet_id: ""

@@ -3,8 +3,30 @@
 {% block content %}
 <h1>Dashboard</h1>
 
+{% if not has_cv or monitored_count == 0 %}
+<div class="card">
+  <h2>Get started</h2>
+  <ol class="small">
+    <li>{% if has_cv %}<s>Upload your CV</s> ✓{% else %}<a href="/profile">Upload your CV</a> — your profile and skills are extracted automatically.{% endif %}</li>
+    <li>{% if monitored_count %}<s>Pick companies to monitor</s> ✓ ({{ monitored_count }} enabled){% else %}<a href="/companies">Pick companies to monitor</a> — or use the button below to load the starter pack instantly.{% endif %}</li>
+    <li>Press <strong>Run discovery</strong> (top right) — or use <strong>Get results now</strong> below.</li>
+  </ol>
+  <form method="post" action="/api/quick-start" class="mt" onsubmit="return quickStart(event)">
+    <button class="btn btn-accent" type="submit" id="quick-start-btn">Get results now</button>
+    <span class="small muted">Loads cloud-verified companies (Accenture, PwC, …), backfills locations, and runs discovery.</span>
+  </form>
+</div>
+{% elif analytics.high_priority_jobs == 0 and analytics.active_jobs > 0 %}
+<div class="card">
+  <p class="small">You have <strong>{{ analytics.active_jobs }}</strong> jobs but none scored high-priority yet. Top matches are shown below — upload your CV or tune locations in <a href="/settings">Settings</a> to sharpen scoring.</p>
+  <form method="post" action="/api/quick-start" class="mt" onsubmit="return quickStart(event)">
+    <button class="btn btn-sm" type="submit">Refresh scores &amp; run discovery</button>
+  </form>
+</div>
+{% endif %}
+
 <div class="grid cols-4">
-  <div class="card stat"><div class="num">{{ analytics.total_jobs }}</div><div class="label">Jobs discovered</div></div>
+  <div class="card stat"><div class="num">{{ analytics.active_jobs }}</div><div class="label">Active jobs</div></div>
   <div class="card stat"><div class="num">{{ analytics.high_priority_jobs }}</div><div class="label">High priority</div></div>
   <div class="card stat"><div class="num">{{ analytics.applications_submitted }}</div><div class="label">Applications</div></div>
   <div class="card stat"><div class="num">{{ analytics.interview_conversion_pct }}%</div><div class="label">Interview conversion</div></div>
@@ -12,17 +34,21 @@
 
 <div class="grid cols-2">
   <div class="card">
-    <h2>Latest high-priority matches</h2>
-    {% if recent_high %}
-      {% for job in recent_high %}
+    <h2>{% if recent_high %}Latest high-priority matches{% else %}Top matches{% endif %}</h2>
+    {% set shown = recent_high if recent_high else recent_top %}
+    {% if shown %}
+      {% for job in shown %}
         <div class="mt">
           <span class="score {{ 'hi' if job.match_score >= 70 else 'mid' if job.match_score >= 45 else 'lo' }}">{{ job.match_score|round|int }}</span>
           <a href="/jobs/{{ job.id }}">{{ job.title }}</a>
           <div class="small muted">{{ job.company.name if job.company }} · {{ job.location or 'location n/a' }}</div>
         </div>
       {% endfor %}
+      {% if not recent_high and analytics.active_jobs %}
+      <p class="small muted mt"><a href="/jobs">View all {{ analytics.active_jobs }} jobs →</a></p>
+      {% endif %}
     {% else %}
-      <p class="muted">No high-priority jobs yet. Configure sources in <a href="/settings">Settings</a> and press “Run discovery”.</p>
+      <p class="muted">No jobs yet. Add companies on the <a href="/companies">Companies</a> page and press <strong>Run discovery</strong>, or click <strong>Get results now</strong> above.</p>
     {% endif %}
   </div>
 
@@ -61,7 +87,7 @@
     {% else %}
       <p class="muted">Run discovery to populate.</p>
     {% endfor %}
-    <p class="small muted mt">Average match score across all jobs: <strong>{{ analytics.avg_match_score }}</strong></p>
+    <p class="small muted mt">Average match score across all jobs: <strong>{{ analytics.avg_match_score }}</strong> · <a href="/analytics">Full analytics →</a></p>
   </div>
 
   <div class="card">
@@ -73,4 +99,28 @@
     {% endfor %}
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function quickStart(event) {
+  event.preventDefault();
+  const btn = document.getElementById('quick-start-btn') || event.submitter;
+  if (btn) { btn.disabled = true; btn.textContent = 'Working…'; }
+  try {
+    const res = await fetch('/api/quick-start', {method: 'POST'});
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'failed');
+    alert(`Done: ${data.jobs_total} jobs in database (${data.high_priority} high priority).` +
+          (data.companies_enabled ? `\n${data.companies_enabled} companies monitoring.` : '') +
+          (data.locations_backfilled ? `\nBackfilled location on ${data.locations_backfilled} jobs.` : ''));
+    location.reload();
+  } catch (err) {
+    alert('Quick start failed: ' + err.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Get results now'; }
+  }
+  return false;
+}
+</script>
 {% endblock %}

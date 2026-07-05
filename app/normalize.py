@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from app.sources.base import RawJob
+from app.location_infer import infer_location
 
 _WHITESPACE = re.compile(r"\s+")
 
@@ -49,7 +49,9 @@ def normalize_location(location: str) -> str:
 def normalize(job: RawJob) -> RawJob:
     job.company = clean_text(job.company)
     job.title = normalize_title(job.title)
-    job.location = normalize_location(job.location)
+    job.location = normalize_location(
+        infer_location(title=job.title, url=job.url, existing=job.location)
+    )
     job.description = (job.description or "").strip()
     job.url = clean_text(job.url)
     return job
