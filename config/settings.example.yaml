@@ -109,6 +109,8 @@ notifications:
   run_summary: true
   # Also send the check-in by email (Telegram only by default).
   run_summary_email: false
+  # Daily reminder for application follow-ups that are due or overdue.
+  followup_reminders: true
   telegram:
     enabled: false
     # Create a bot with @BotFather, then set the token and your chat id.

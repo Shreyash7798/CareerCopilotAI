@@ -16,14 +16,17 @@ from sqlalchemy.orm import Session
 from app import cv_parser, resume_engine
 from app.analytics import compute_analytics
 from app.config import data_dir, get_company_catalog, get_profile, save_profile
+from app.cover_letter_engine import generate_cover_letter
 from app.db import get_db, session_scope
 from app.exporter import export_excel
+from app.interview_prep import build_interview_prep
 from app.models import (
     APPLICATION_STATUSES,
     ATS_TYPES,
     COMPANY_PRIORITIES,
     Application,
     Company,
+    InterviewPrep,
     Job,
     Recruiter,
     Resume,
@@ -493,6 +496,78 @@ def api_tailor_resume(job_id: int):
             "pdf": result["pdf"],
             "matched_keywords": result["matched_keywords"],
         }
+
+
+@router.post("/jobs/{job_id}/cover-letter")
+def api_cover_letter(job_id: int):
+    with session_scope() as session:
+        job = session.get(Job, job_id)
+        if job is None:
+            raise HTTPException(404, "Job not found")
+        profile_row = session.execute(select(UserProfile)).scalars().first()
+        cv_json = json.loads(profile_row.profile_json) if profile_row and profile_row.profile_json else None
+        if not get_profile().get("full_name") and not (cv_json and cv_json.get("full_name")):
+            raise HTTPException(400, "Upload your CV on the Profile page first")
+        result = generate_cover_letter(
+            job_title=job.title,
+            company=job.company.name if job.company else "the company",
+            job_description=job.description or "",
+            cv_json=cv_json,
+        )
+        resume = Resume(
+            job_id=job.id,
+            kind="cover_letter",
+            file_path=result["docx"],
+            matched_keywords=result["matched_keywords_json"],
+        )
+        session.add(resume)
+        session.flush()
+        log_activity(session, "resume", f"Cover letter generated for job #{job.id}: {job.title}")
+        return {
+            "id": resume.id,
+            "docx": result["docx"],
+            "matched_keywords": result["matched_keywords"],
+            "preview": result["text"][:2000],
+        }
+
+
+@router.post("/jobs/{job_id}/interview-prep")
+def api_interview_prep(job_id: int):
+    with session_scope() as session:
+        job = session.get(Job, job_id)
+        if job is None:
+            raise HTTPException(404, "Job not found")
+        breakdown = json.loads(job.score_breakdown) if job.score_breakdown else []
+        prep = build_interview_prep(
+            job_title=job.title,
+            company=job.company.name if job.company else "",
+            job_description=job.description or "",
+            location=job.location or "",
+            score_breakdown=breakdown,
+        )
+        row = InterviewPrep(job_id=job.id, content_json=prep["content_json"])
+        session.add(row)
+        session.flush()
+        log_activity(session, "app", f"Interview prep generated for job #{job.id}")
+        prep["id"] = row.id
+        return prep
+
+
+@router.get("/jobs/{job_id}/interview-prep")
+def api_get_interview_prep(job_id: int, db: Session = Depends(get_db)):
+    row = (
+        db.execute(
+            select(InterviewPrep).where(InterviewPrep.job_id == job_id).order_by(InterviewPrep.created_at.desc())
+        )
+        .scalars()
+        .first()
+    )
+    if row is None:
+        raise HTTPException(404, "No interview prep for this job yet")
+    data = json.loads(row.content_json)
+    data["id"] = row.id
+    data["created_at"] = row.created_at.isoformat()
+    return data
 
 
 @router.get("/resumes")

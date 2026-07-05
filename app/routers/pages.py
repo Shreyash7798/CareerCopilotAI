@@ -30,6 +30,7 @@ from app.models import (
     ActivityLog,
     Application,
     Company,
+    InterviewPrep,
     Job,
     Recruiter,
     Resume,
@@ -214,10 +215,32 @@ def job_detail(request: Request, job_id: int, db: Session = Depends(get_db)):
         .scalars()
         .all()
     )
+    tailored = [r for r in resumes if r.kind == "tailored"]
+    cover_letters = [r for r in resumes if r.kind == "cover_letter"]
+    prep_row = (
+        db.execute(
+            select(InterviewPrep).where(InterviewPrep.job_id == job_id).order_by(InterviewPrep.created_at.desc())
+        )
+        .scalars()
+        .first()
+    )
+    interview_prep = json.loads(prep_row.content_json) if prep_row else None
+    recruiters = []
+    if job.company_id:
+        recruiters = (
+            db.execute(select(Recruiter).where(Recruiter.company_id == job.company_id).order_by(Recruiter.name))
+            .scalars()
+            .all()
+        )
     has_master = False
+    has_profile = False
     profile_row = db.execute(select(UserProfile)).scalars().first()
     if profile_row and profile_row.cv_path and profile_row.cv_path.endswith(".docx"):
         has_master = Path(profile_row.cv_path).exists()
+    if profile_row and (profile_row.profile_json or profile_row.full_name):
+        has_profile = True
+    if get_profile().get("full_name"):
+        has_profile = True
     return templates.TemplateResponse(
         request,
         "job_detail.html",
@@ -225,8 +248,12 @@ def job_detail(request: Request, job_id: int, db: Session = Depends(get_db)):
             "active": "jobs",
             "job": job,
             "breakdown": breakdown,
-            "resumes": resumes,
+            "resumes": tailored,
+            "cover_letters": cover_letters,
+            "interview_prep": interview_prep,
+            "recruiters": recruiters,
             "has_master": has_master,
+            "has_profile": has_profile,
         },
     )
 

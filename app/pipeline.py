@@ -17,8 +17,9 @@ from app.config import get_settings, get_sources_config, sources_yaml_exists
 from app.db import session_scope
 from app.dedup import dedup_key, is_fuzzy_duplicate
 from app.exporter import export_excel
-from app.models import Company, Job, log_activity
+from app.models import Company, Job, Recruiter, log_activity
 from app.normalize import normalize, passes_filters
+from app.recruiter_discovery import upsert_recruiters
 from app.scoring import score_job
 from app.sources import REGISTRY
 from app.sources.base import RawJob
@@ -293,6 +294,14 @@ def run_pipeline(notify: bool = True, export: bool = True) -> PipelineResult:
             result.new_job_ids.append(job.id)
             if job.is_high_priority:
                 result.high_priority += 1
+            if company.recruiter_search_enabled and job.description:
+                upsert_recruiters(
+                    session,
+                    company_id=company.id,
+                    company_name=company.name,
+                    job_title=job.title,
+                    description=job.description,
+                )
 
         # Deactivate postings that disappeared from full-list sources.
         for name_lower, info in run_info.items():

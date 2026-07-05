@@ -183,6 +183,45 @@ def send_run_summary(result) -> None:
         log_activity(session, "notify", f"Run summary sent (telegram={sent_tg}, email={sent_mail})")
 
 
+def send_followup_reminders() -> None:
+    """Notify about application follow-ups due today or overdue."""
+    cfg = get_settings().get("notifications", {}) or {}
+    if not cfg.get("followup_reminders", True):
+        return
+    base_url = (get_settings().get("app", {}) or {}).get("base_url", "http://localhost:8000")
+    today = datetime.now(timezone.utc).replace(tzinfo=None).date()
+    with session_scope() as session:
+        due = (
+            session.execute(
+                select(Application).where(
+                    Application.follow_up_date.isnot(None),
+                    Application.status.notin_(["Rejected", "Withdrawn", "Offer"]),
+                )
+            )
+            .scalars()
+            .all()
+        )
+        items = [
+            a
+            for a in due
+            if a.follow_up_date and a.follow_up_date.date() <= today
+        ]
+        if not items:
+            return
+        lines = [
+            f"• {a.company_name or '—'} — {a.role or ''} (status: {a.status}, due {a.follow_up_date:%d %b})"
+            for a in items[:15]
+        ]
+        text = (
+            f"CareerCopilot: {len(items)} application follow-up(s) due\n\n"
+            + "\n".join(lines)
+            + f"\n\nTracker: {base_url}/applications"
+        )
+        sent_tg = send_telegram(text)
+        sent_mail = send_email("CareerCopilot: follow-ups due", text)
+        log_activity(session, "notify", f"Follow-up reminders sent (telegram={sent_tg}, email={sent_mail})")
+
+
 def send_test_notification() -> dict:
     """Send a test message on all configured channels and report the outcome,
     so channel misconfiguration is diagnosable from the dashboard."""
