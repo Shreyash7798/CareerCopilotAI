@@ -26,7 +26,7 @@ Use this after deploying to Oracle Cloud or any public host.
 - [ ] Upload CV on **Profile** (improves scoring)
 - [ ] Companies page: enable **Accenture India**, **PwC**, **EY India**, etc.
 - [ ] Click **Get results now** once after deploy
-- [ ] Jobs page shows Mumbai/Pune roles scoring 70+
+- [ ] Jobs page shows posting age; stale/removed roles drop off after each discovery run
 
 ## Optional
 

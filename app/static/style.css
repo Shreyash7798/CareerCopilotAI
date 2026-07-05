@@ -116,6 +116,7 @@ table.list th { color: var(--muted); font-weight: 600; font-size: .78rem; text-t
 .badge.status-Offer { background: #dcfce7; color: #166534; }
 .badge.status-Rejected { background: #fee2e2; color: #991b1b; }
 .badge.status-Planned { background: #f1f5f9; color: #475569; }
+.badge.closed { background: #fee2e2; color: #991b1b; }
 
 form.filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px; }
 input, select, textarea {

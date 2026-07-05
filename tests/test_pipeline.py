@@ -181,3 +181,68 @@ def test_refresh_interval_skips_recent(fake_setup):
     result2 = pipeline_mod.run_pipeline(notify=False, export=False)
     assert result2.sources_run == 0
     assert result2.sources_skipped == 1
+
+
+def test_aged_untracked_jobs_deactivated(fake_setup, monkeypatch):
+    from datetime import datetime, timedelta
+
+    from sqlalchemy import select
+
+    from app.models import Application, Job
+
+    monkeypatch.setattr(
+        "app.job_visibility.get_settings",
+        lambda refresh=False: {
+            "profile": {
+                "experience_years": 3,
+                "preferred_locations": ["Mumbai", "Pune"],
+                "skills": ["Supply Chain", "Excel", "Strategy"],
+                "preferred_domains": ["Consulting"],
+                "interests": ["Operations Consulting"],
+                "preferred_companies": [],
+                "avoided_companies": [],
+            },
+            "scoring": {
+                "weights": {},
+                "high_priority_threshold": 70,
+                "role_keywords": ["consultant", "operations"],
+                "negative_role_keywords": ["intern"],
+            },
+            "job_visibility": {
+                "hide_stale_untracked": True,
+                "max_posted_age_days": 30,
+                "max_discovered_age_days": 14,
+            },
+        },
+    )
+    pipeline_mod.run_pipeline(notify=False, export=False)
+    tracked_job_id = None
+    with db_mod.session_scope() as session:
+        job = session.execute(select(Job)).scalars().one()
+        tracked_job_id = job.id
+        job.posted_at = datetime.utcnow() - timedelta(days=45)
+        session.add(
+            Application(job_id=job.id, company_name="Acme Consulting", role=job.title, status="Applied")
+        )
+        job2 = Job(
+            company_id=job.company_id,
+            title="Old Strategy Role",
+            location="Mumbai",
+            description="old",
+            url="https://acme.example/old",
+            source="fake",
+            external_id="old",
+            dedup_key="oldkey123",
+            posted_at=datetime.utcnow() - timedelta(days=45),
+            match_score=50,
+            is_high_priority=False,
+        )
+        session.add(job2)
+
+    result = pipeline_mod.run_pipeline(notify=False, export=False)
+    assert result.deactivated >= 1
+    with db_mod.session_scope() as session:
+        tracked = session.get(Job, tracked_job_id)
+        stale = session.execute(select(Job).where(Job.title == "Old Strategy Role")).scalars().one()
+        assert tracked.is_active is True  # tracked jobs stay active
+        assert stale.is_active is False

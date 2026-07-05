@@ -100,7 +100,6 @@ scoring:
   # Jobs scoring at or above this (0-100) are "high priority" and trigger
   # instant notifications.
   high_priority_threshold: 70
-  # Title keywords that indicate seniority mismatch get penalized.
   role_keywords:
     - consultant
     - consulting
@@ -115,6 +114,14 @@ scoring:
     - director
     - partner
     - vice president
+
+job_visibility:
+  # Hide untracked jobs removed from company boards or older than these limits.
+  hide_stale_untracked: true
+  # When the source provides a posting date (Greenhouse, Lever, Accenture, …).
+  max_posted_age_days: 60
+  # Fallback when no posting date (e.g. careers_page scrapes).
+  max_discovered_age_days: 90
 
 notifications:
   # Send a short check-in message after every scheduled discovery run, even
