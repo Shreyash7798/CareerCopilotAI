@@ -248,8 +248,9 @@ function and one YAML entry.
 ## Boundaries (by design)
 
 - No automatic application submission, no recruiter messaging.
-- No login-walled scraping, no bypassing platform restrictions; LinkedIn is
-  handled only via public pages you link yourself.
+- No login-walled scraping, no bypassing platform restrictions. LinkedIn uses
+  public guest search and job pages only (no profile access); paste individual
+  job links from the Jobs page to import.
 - No mandatory cloud services or paid APIs; your data stays in `data/` on
   your machine.
 

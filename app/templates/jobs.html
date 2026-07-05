@@ -3,6 +3,15 @@
 {% block content %}
 <h1>Jobs <span class="muted small">({{ total }} matching)</span></h1>
 
+<div class="card">
+  <h2>Add from LinkedIn</h2>
+  <p class="small muted">Paste a public LinkedIn job link from your phone (Share → Copy link). No login required — uses LinkedIn's public guest page.</p>
+  <form class="filters" method="post" action="/jobs/import-linkedin" onsubmit="return importLinkedIn(event)">
+    <input type="url" name="url" id="linkedin-url" placeholder="https://www.linkedin.com/jobs/view/…" required style="flex:1">
+    <button class="btn btn-accent" type="submit" id="linkedin-import-btn">Import job</button>
+  </form>
+</div>
+
 <form class="filters" method="get" action="/jobs">
   <input type="search" name="q" placeholder="Title contains…" value="{{ filters.q }}">
   <input type="text" name="location" placeholder="Location…" value="{{ filters.location }}">
@@ -42,4 +51,30 @@
   {% if page < pages %}<a class="btn" href="/jobs?q={{ filters.q }}&location={{ filters.location }}&company={{ filters.company }}&min_score={{ filters.min_score }}&page={{ page + 1 }}">Next →</a>{% endif %}
 </div>
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function importLinkedIn(event) {
+  event.preventDefault();
+  const btn = document.getElementById('linkedin-import-btn');
+  const url = document.getElementById('linkedin-url').value;
+  btn.disabled = true; btn.textContent = 'Importing…';
+  try {
+    const body = new FormData();
+    body.append('url', url);
+    const res = await fetch('/jobs/import-linkedin', {method: 'POST', body});
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Import failed');
+    alert(data.status === 'created'
+      ? `Imported: ${data.title} @ ${data.company} (score ${data.match_score})`
+      : `Already tracked: ${data.title}`);
+    location.href = '/jobs/' + data.job_id;
+  } catch (err) {
+    alert('LinkedIn import failed: ' + err.message);
+    btn.disabled = false; btn.textContent = 'Import job';
+  }
+  return false;
+}
+</script>
 {% endblock %}

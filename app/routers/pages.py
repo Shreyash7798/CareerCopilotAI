@@ -220,6 +220,21 @@ def jobs_page(
     )
 
 
+@router.post("/jobs/import-linkedin")
+def jobs_import_linkedin(url: str = Form(...)):
+    from fastapi.responses import JSONResponse
+
+    from app.linkedin_import import import_linkedin_job
+
+    try:
+        result = import_linkedin_job(url)
+        return JSONResponse(result)
+    except ValueError as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=400)
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"detail": str(exc)}, status_code=400)
+
+
 @router.get("/jobs/{job_id}", response_class=HTMLResponse)
 def job_detail(request: Request, job_id: int, db: Session = Depends(get_db)):
     job = db.get(Job, job_id)
@@ -436,6 +451,8 @@ def _apply_company_form(
     site: str,
     search_text: str,
     link_selector: str,
+    location: str,
+    f_TPR: str,
     render: bool,
     keywords: str,
     refresh_interval_minutes: str,
@@ -457,7 +474,10 @@ def _apply_company_form(
             "tenant": tenant.strip(),
             "site": site.strip(),
             "search_text": search_text.strip(),
+            "keywords": search_text.strip(),
             "link_selector": link_selector.strip(),
+            "location": location.strip(),
+            "f_TPR": f_TPR.strip(),
         }.items()
         if v
     }
@@ -487,6 +507,8 @@ def company_create(
     site: str = Form(""),
     search_text: str = Form(""),
     link_selector: str = Form(""),
+    location: str = Form(""),
+    f_TPR: str = Form(""),
     render: bool = Form(False),
     keywords: str = Form(""),
     refresh_interval_minutes: str = Form(""),
@@ -507,6 +529,7 @@ def company_create(
             name=name, sector=sector, country=country, ats_type=ats_type,
             career_url=career_url, board=board, host=host, tenant=tenant,
             site=site, search_text=search_text, link_selector=link_selector,
+            location=location, f_TPR=f_TPR,
             render=render, keywords=keywords,
             refresh_interval_minutes=refresh_interval_minutes,
             priority=priority, enabled=enabled,
@@ -530,6 +553,8 @@ def company_update(
     site: str = Form(""),
     search_text: str = Form(""),
     link_selector: str = Form(""),
+    location: str = Form(""),
+    f_TPR: str = Form(""),
     render: bool = Form(False),
     keywords: str = Form(""),
     refresh_interval_minutes: str = Form(""),
@@ -546,6 +571,7 @@ def company_update(
                 name=name, sector=sector, country=country, ats_type=ats_type,
                 career_url=career_url, board=board, host=host, tenant=tenant,
                 site=site, search_text=search_text, link_selector=link_selector,
+                location=location, f_TPR=f_TPR,
                 render=render, keywords=keywords,
                 refresh_interval_minutes=refresh_interval_minutes,
                 priority=priority, enabled=enabled,

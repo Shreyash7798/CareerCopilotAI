@@ -31,6 +31,7 @@ ATS_DEFAULTS: dict[str, tuple[str, dict]] = {
     "oracle": ("careers_page", {"link_selector": "a[href*='/job/']", "render": True}),
     "taleo": ("careers_page", {"link_selector": "a[href*='job']", "render": True}),
     "careers_page": ("careers_page", {}),
+    "linkedin": ("linkedin", {"f_TPR": "r604800", "max_pages": 5, "detail_limit": 20}),
 }
 
 

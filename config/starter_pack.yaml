@@ -1,6 +1,10 @@
 # Companies loaded automatically on first run when no enabled monitors exist.
 # Every entry uses a public JSON API (no Playwright, no bot protection).
 companies:
+  - sector: LinkedIn Job Feeds
+    name: LinkedIn — Consulting (Mumbai)
+  - sector: LinkedIn Job Feeds
+    name: LinkedIn — Consulting (Pune)
   - sector: Consulting & Advisory
     name: Accenture India
   - sector: Consulting & Advisory

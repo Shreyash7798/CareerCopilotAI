@@ -123,6 +123,12 @@ job_visibility:
   # Fallback when no posting date (e.g. careers_page scrapes).
   max_discovered_age_days: 90
 
+linkedin:
+  # Defaults for linkedin ats_type monitors (overridden per company in ats_config).
+  f_TPR: r604800          # past week (r86400=24h, r2592000=month)
+  max_pages: 5
+  detail_limit: 20
+
 notifications:
   # Send a short check-in message after every scheduled discovery run, even
   # when nothing new was found (heartbeat so you know the system is alive).

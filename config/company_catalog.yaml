@@ -10,6 +10,72 @@
 # extend via pull requests.
 
 sectors:
+  - name: LinkedIn Job Feeds
+    companies:
+      - name: LinkedIn — Consulting (Mumbai)
+        ats_type: linkedin
+        country: India
+        ats_config:
+          keywords: management consulting strategy transformation
+          location: Mumbai, Maharashtra, India
+          f_TPR: r604800
+          max_pages: 5
+          detail_limit: 20
+      - name: LinkedIn — Consulting (Pune)
+        ats_type: linkedin
+        country: India
+        ats_config:
+          keywords: management consulting strategy operations
+          location: Pune, Maharashtra, India
+          f_TPR: r604800
+          max_pages: 5
+          detail_limit: 20
+      - name: LinkedIn — Consulting (India)
+        ats_type: linkedin
+        country: India
+        ats_config:
+          keywords: consultant consulting advisory
+          location: India
+          f_TPR: r604800
+          max_pages: 5
+          detail_limit: 15
+      - name: LinkedIn — GCC & Transformation (India)
+        ats_type: linkedin
+        country: India
+        ats_config:
+          keywords: GCC global capability center business transformation
+          location: India
+          f_TPR: r604800
+          max_pages: 5
+          detail_limit: 15
+      - name: LinkedIn — Supply Chain & Operations (India)
+        ats_type: linkedin
+        country: India
+        ats_config:
+          keywords: supply chain operations manufacturing consulting
+          location: India
+          f_TPR: r604800
+          max_pages: 5
+          detail_limit: 15
+      - name: LinkedIn — Consulting (Bengaluru)
+        ats_type: linkedin
+        country: India
+        ats_config:
+          keywords: management consulting strategy
+          location: Bengaluru, Karnataka, India
+          f_TPR: r604800
+          max_pages: 5
+          detail_limit: 15
+      - name: LinkedIn — Consulting (Global)
+        ats_type: linkedin
+        country: Global
+        ats_config:
+          keywords: management consulting strategy operations
+          location: Worldwide
+          f_TPR: r604800
+          max_pages: 3
+          detail_limit: 10
+
   - name: Consulting & Advisory
     companies:
       - name: PwC
