@@ -47,10 +47,14 @@ FAKE_JOBS = [
 ]
 
 
+CURRENT_JOBS: list[RawJob] = []
+
+
 @pytest.fixture()
 def fake_setup(temp_db, monkeypatch):
     # Register a fake connector and map the 'greenhouse' ats_type to it.
-    monkeypatch.setitem(pipeline_mod.REGISTRY, "greenhouse", lambda entry: list(FAKE_JOBS))
+    CURRENT_JOBS[:] = FAKE_JOBS
+    monkeypatch.setitem(pipeline_mod.REGISTRY, "greenhouse", lambda entry: list(CURRENT_JOBS))
     monkeypatch.setattr(pipeline_mod, "sources_yaml_exists", lambda: False)
     monkeypatch.setattr(
         pipeline_mod,
@@ -125,6 +129,45 @@ def test_disabled_company_is_skipped(fake_setup):
     result = pipeline_mod.run_pipeline(notify=False, export=False)
     assert result.sources_run == 0
     assert result.new_jobs == 0
+
+
+def test_stale_jobs_deactivated_and_reactivated(fake_setup):
+    result = pipeline_mod.run_pipeline(notify=False, export=False)
+    assert result.new_jobs == 1
+
+    # The consultant role disappears from the board; a new one appears.
+    CURRENT_JOBS[:] = [
+        RawJob(
+            company="Acme Consulting",
+            title="Strategy Consultant",
+            location="Pune, India",
+            description="2-4 years of strategy experience.",
+            url="https://acme.example/jobs/9",
+            source="fake",
+            external_id="9",
+        )
+    ]
+    result2 = pipeline_mod.run_pipeline(notify=False, export=False)
+    assert result2.new_jobs == 1
+    assert result2.deactivated == 1  # the operations consultant closed
+
+    from sqlalchemy import select
+
+    from app.models import Job
+
+    with db_mod.session_scope() as session:
+        by_title = {j.title: j for j in session.execute(select(Job)).scalars()}
+        assert by_title["Operations Consultant"].is_active is False
+        assert by_title["Strategy Consultant"].is_active is True
+
+    # The original posting comes back -> reactivated, not duplicated.
+    CURRENT_JOBS[:] = FAKE_JOBS
+    result3 = pipeline_mod.run_pipeline(notify=False, export=False)
+    assert result3.new_jobs == 0
+    assert result3.reactivated == 1
+    with db_mod.session_scope() as session:
+        by_title = {j.title: j for j in session.execute(select(Job)).scalars()}
+        assert by_title["Operations Consultant"].is_active is True
 
 
 def test_refresh_interval_skips_recent(fake_setup):

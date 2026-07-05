@@ -32,7 +32,8 @@
       {% endfor %}
       <tr><td class="muted">High-priority threshold</td><td>{{ settings.scoring.high_priority_threshold }}</td></tr>
     </table>
-    <p class="small muted mt">Edit weights in <code>config/settings.yaml</code>. Scores are deterministic and fully explained per job.</p>
+    <p class="small muted mt">Edit weights in <code>config/settings.yaml</code>. Scores are deterministic and fully explained per job. Saving the profile above re-scores all jobs automatically; you can also trigger it manually.</p>
+    <button class="btn" onclick="rescoreJobs(this)">Re-score all jobs now</button>
   </div>
 
   <div class="card">
@@ -59,6 +60,17 @@
 
 {% block scripts %}
 <script>
+async function rescoreJobs(btn) {
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/jobs/rescore', {method: 'POST'});
+    const d = await res.json();
+    alert(`Re-scored ${d.rescored} jobs against your current profile.`);
+  } catch (err) {
+    alert('Re-score failed: ' + err);
+  } finally { btn.disabled = false; }
+}
+
 async function testNotifications(btn) {
   btn.disabled = true;
   try {
