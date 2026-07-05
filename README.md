@@ -150,6 +150,47 @@ If you expose the app beyond a private network, set `app.auth_password` in
 survive 30 days; changing the password signs everyone out). For public
 deployments also consider HTTPS via a reverse proxy or Cloudflare Tunnel.
 
+### Oracle Cloud: keep the server in sync with GitHub
+
+Merging a PR updates GitHub only — the VM does **not** auto-update unless you
+wire up deploy. Pick **one** of these:
+
+**Option A — GitHub Actions (deploy on every merge to `main`)**
+
+1. On the VM, create a deploy key and authorize it:
+   ```bash
+   ssh-keygen -t ed25519 -f ~/.ssh/careercopilot_deploy -N ""
+   cat ~/.ssh/careercopilot_deploy.pub >> ~/.ssh/authorized_keys
+   ```
+2. In GitHub → **Settings → Secrets and variables → Actions**, add:
+   - `OCI_HOST` = your public IP (e.g. `161.118.184.228`)
+   - `OCI_USER` = `ubuntu`
+   - `OCI_SSH_KEY` = contents of `~/.ssh/careercopilot_deploy` (private key)
+3. Merge a PR — the **Deploy to OCI** workflow runs `git pull` + restart.
+
+**Option B — Cron on the VM (no GitHub secrets)**
+
+SSH into the box once and run:
+```bash
+cd ~/CareerCopilotAI
+bash scripts/setup-oci-deploy.sh
+```
+That installs systemd (if missing) and a cron job that runs `scripts/deploy.sh`
+every 5 minutes when `main` has new commits.
+
+**Manual deploy (any time)**
+```bash
+cd ~/CareerCopilotAI && ./scripts/deploy.sh
+```
+
+**Verify the live revision**
+```bash
+curl http://161.118.184.228/api/version
+# {"revision":"a7734f4","project":"CareerCopilotAI"}
+```
+Compare `revision` to the latest commit on `main`. If `/api/quick-start` returns
+404, the server is still on an old build.
+
 ## Architecture
 
 ```
