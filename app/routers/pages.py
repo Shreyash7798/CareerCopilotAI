@@ -6,8 +6,9 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
@@ -44,6 +45,42 @@ router = APIRouter(include_in_schema=False)
 TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 templates.env.filters["job_age_label"] = job_age_label
+
+
+def _parse_optional_float(value: str | None) -> float:
+    if value is None or str(value).strip() == "":
+        return 0.0
+    try:
+        return max(0.0, min(100.0, float(value)))
+    except ValueError:
+        return 0.0
+
+
+def _parse_bool_query(value: str | None) -> bool:
+    if value is None:
+        return False
+    return str(value).lower() in ("1", "true", "yes", "on")
+
+
+def _jobs_query_string(filters: dict, page: int | None = None) -> str:
+    """Build a URL query string for jobs list filters (pagination-safe)."""
+    params: list[tuple[str, str]] = []
+    for key in ("q", "location", "company"):
+        val = (filters.get(key) or "").strip()
+        if val:
+            params.append((key, val))
+    min_score = filters.get("min_score") or 0
+    if min_score and float(min_score) > 0:
+        params.append(("min_score", str(int(min_score) if float(min_score) == int(min_score) else min_score)))
+    if filters.get("high_priority"):
+        params.append(("high_priority", "true"))
+    page_num = page if page is not None else filters.get("page")
+    if page_num and int(page_num) > 1:
+        params.append(("page", str(int(page_num))))
+    return urlencode(params)
+
+
+templates.env.filters["jobs_query"] = _jobs_query_string
 
 
 def _parse_date(value: str | None) -> datetime | None:
@@ -178,14 +215,23 @@ def jobs_page(
     q: str = "",
     location: str = "",
     company: str = "",
-    min_score: float = 0,
-    high_priority: bool = False,
+    min_score: str | None = Query(None),
+    high_priority: str | None = Query(None),
     page: int = 1,
 ):
     page_size = 25
+    min_score_val = _parse_optional_float(min_score)
+    high_priority_val = _parse_bool_query(high_priority)
     visible = visible_jobs_filter()
-    stmt = select(Job).where(visible, Job.match_score >= min_score)
-    count_stmt = select(func.count(Job.id)).where(visible, Job.match_score >= min_score)
+    stmt = (
+        select(Job)
+        .options(joinedload(Job.company))
+        .where(visible, Job.match_score >= min_score_val)
+    )
+    count_stmt = select(func.count(Job.id)).where(visible, Job.match_score >= min_score_val)
+    q = (q or "").strip()
+    location = (location or "").strip()
+    company = (company or "").strip()
     if q:
         stmt = stmt.where(Job.title.ilike(f"%{q}%"))
         count_stmt = count_stmt.where(Job.title.ilike(f"%{q}%"))
@@ -193,9 +239,10 @@ def jobs_page(
         stmt = stmt.where(Job.location.ilike(f"%{location}%"))
         count_stmt = count_stmt.where(Job.location.ilike(f"%{location}%"))
     if company:
-        stmt = stmt.join(Company).where(Company.name.ilike(f"%{company}%"))
-        count_stmt = count_stmt.join(Company).where(Company.name.ilike(f"%{company}%"))
-    if high_priority:
+        company_filter = Job.company.has(Company.name.ilike(f"%{company}%"))
+        stmt = stmt.where(company_filter)
+        count_stmt = count_stmt.where(company_filter)
+    if high_priority_val:
         stmt = stmt.where(Job.is_high_priority.is_(True))
         count_stmt = count_stmt.where(Job.is_high_priority.is_(True))
     total = db.execute(count_stmt).scalar() or 0
@@ -208,6 +255,15 @@ def jobs_page(
         .scalars()
         .all()
     )
+    filters = {
+        "q": q,
+        "location": location,
+        "company": company,
+        "min_score": min_score_val,
+        "high_priority": high_priority_val,
+        "page": page,
+    }
+    has_filters = bool(q or location or company or min_score_val > 0 or high_priority_val)
     return templates.TemplateResponse(
         request,
         "jobs.html",
@@ -217,13 +273,8 @@ def jobs_page(
             "total": total,
             "page": page,
             "pages": max(1, -(-total // page_size)),
-            "filters": {
-                "q": q,
-                "location": location,
-                "company": company,
-                "min_score": min_score,
-                "high_priority": high_priority,
-            },
+            "filters": filters,
+            "has_filters": has_filters,
         },
     )
 

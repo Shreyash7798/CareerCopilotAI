@@ -1,10 +1,16 @@
 {% extends "base.html" %}
 {% block title %}Settings · CareerCopilot AI{% endblock %}
 {% block content %}
-<h1>Settings</h1>
 
-<div class="card">
-  <h2>Profile & preferences</h2>
+<header class="page-header">
+  <div>
+    <h1 class="page-title">Settings</h1>
+    <p class="page-sub">Profile preferences and scoring configuration</p>
+  </div>
+</header>
+
+<section class="card panel-card settings-section">
+  <header class="panel-head"><h2>Profile & preferences</h2></header>
   <p class="small muted">These values drive match scoring. Lists are comma-separated.</p>
   <form method="post" action="/settings/profile" class="grid cols-2">
     <label class="f">Full name <input name="full_name" value="{{ settings.profile.full_name or '' }}"></label>
@@ -21,41 +27,42 @@
     <label class="f">Avoided companies <input name="avoided_companies" value="{{ settings.profile.avoided_companies | join(', ') if settings.profile.avoided_companies }}"></label>
     <div><button class="btn btn-accent" type="submit">Save profile</button></div>
   </form>
-</div>
+</section>
 
 <div class="grid cols-2">
-  <div class="card">
-    <h2>Scoring weights</h2>
-    <table class="list">
+  <section class="card panel-card settings-section">
+    <header class="panel-head"><h2>Scoring weights</h2></header>
+    <div class="weight-pills">
       {% for name, w in settings.scoring.weights.items() %}
-      <tr><td>{{ name.replace('_',' ') }}</td><td>{{ w }}</td></tr>
+      <span class="weight-pill">{{ name.replace('_',' ') }} <span>{{ w }}</span></span>
       {% endfor %}
-      <tr><td class="muted">High-priority threshold</td><td>{{ settings.scoring.high_priority_threshold }}</td></tr>
-    </table>
-    <p class="small muted mt">Edit weights in <code>config/settings.yaml</code>. Scores are deterministic and fully explained per job. Saving the profile above re-scores all jobs automatically; you can also trigger it manually.</p>
-    <button class="btn" onclick="rescoreJobs(this)">Re-score all jobs now</button>
-  </div>
+    </div>
+    <p class="small muted mt">High-priority threshold: <strong>{{ settings.scoring.high_priority_threshold }}</strong></p>
+    <p class="small muted">Edit weights in <code>config/settings.yaml</code>. Saving profile above re-scores all jobs.</p>
+    <button class="btn mt" onclick="rescoreJobs(this)">Re-score all jobs now</button>
+  </section>
 
-  <div class="card">
-    <h2>Scheduler & notifications</h2>
-    <table class="list">
-      <tr><td class="muted">Scheduler</td><td>{{ 'enabled' if settings.scheduler.enabled else 'disabled' }}</td></tr>
-      <tr><td class="muted">Discovery interval</td><td>every {{ settings.scheduler.discovery_interval_minutes }} min</td></tr>
-      <tr><td class="muted">Daily summary</td><td>{{ settings.scheduler.daily_summary_time }}</td></tr>
-      <tr><td class="muted">Telegram</td><td>{{ 'enabled' if settings.notifications.telegram.enabled else 'disabled' }}</td></tr>
-      <tr><td class="muted">Email</td><td>{{ 'enabled' if settings.notifications.email.enabled else 'disabled' }}</td></tr>
+  <section class="card panel-card settings-section">
+    <header class="panel-head"><h2>Scheduler & notifications</h2></header>
+    <table class="kv-table">
+      <tr><td>Scheduler</td><td>{{ 'enabled' if settings.scheduler.enabled else 'disabled' }}</td></tr>
+      <tr><td>Discovery interval</td><td>every {{ settings.scheduler.discovery_interval_minutes }} min</td></tr>
+      <tr><td>Daily summary</td><td>{{ settings.scheduler.daily_summary_time }}</td></tr>
+      <tr><td>Telegram</td><td>{{ 'enabled' if settings.notifications.telegram.enabled else 'disabled' }}</td></tr>
+      <tr><td>Email</td><td>{{ 'enabled' if settings.notifications.email.enabled else 'disabled' }}</td></tr>
     </table>
-    <p class="small muted mt">Configure channels in <code>config/settings.yaml</code> (bot token / SMTP credentials stay on your machine). A short check-in is sent after every scheduled discovery run; disable with <code>notifications.run_summary: false</code>. Set <code>scheduler.timezone</code> (e.g. <code>Asia/Kolkata</code>) so the daily summary arrives at your local time.</p>
-    <button class="btn" onclick="testNotifications(this)">Send test notification</button>
-    <button class="btn" onclick="fetch('/api/summary/daily/send', {method:'POST'}).then(() => alert('Daily summary sent (check configured channels / activity log).'))">Send daily summary now</button>
-  </div>
+    <p class="small muted mt">Configure channels in <code>config/settings.yaml</code>. Set <code>scheduler.timezone</code> (e.g. <code>Asia/Kolkata</code>).</p>
+    <div class="filter-actions mt">
+      <button class="btn" onclick="testNotifications(this)">Send test notification</button>
+      <button class="btn" onclick="fetch('/api/summary/daily/send', {method:'POST'}).then(() => { if (typeof showToast==='function') showToast('Daily summary sent.', 'info'); else alert('Daily summary sent.'); })">Send daily summary</button>
+    </div>
+  </section>
 </div>
 
-<div class="card">
-  <h2>Job sources</h2>
-  <p class="small">Companies to monitor are managed on the <a href="/companies">Companies</a> page — add from the catalog or configure any Greenhouse, Lever, Workday, SmartRecruiters, SAP, Oracle, Taleo or generic careers page. No config files needed.</p>
-  <p class="small muted">A legacy <code>config/sources.yaml</code>, if present, is imported into the Companies table automatically on the next discovery run.</p>
-</div>
+<section class="card panel-card">
+  <header class="panel-head"><h2>Job sources</h2></header>
+  <p class="small">Companies are managed on the <a href="/companies">Companies</a> page — add from the catalog or configure any ATS type.</p>
+</section>
 {% endblock %}
 
 {% block scripts %}
@@ -65,9 +72,11 @@ async function rescoreJobs(btn) {
   try {
     const res = await fetch('/api/jobs/rescore', {method: 'POST'});
     const d = await res.json();
-    alert(`Re-scored ${d.rescored} jobs against your current profile.`);
+    if (typeof showToast === 'function') showToast(`Re-scored ${d.rescored} jobs.`, 'info');
+    else alert(`Re-scored ${d.rescored} jobs.`);
   } catch (err) {
-    alert('Re-score failed: ' + err);
+    if (typeof showToast === 'function') showToast('Re-score failed: ' + err, 'err');
+    else alert('Re-score failed: ' + err);
   } finally { btn.disabled = false; }
 }
 
@@ -76,12 +85,12 @@ async function testNotifications(btn) {
   try {
     const res = await fetch('/api/notifications/test', {method: 'POST'});
     const d = await res.json();
-    alert(
-      `Telegram: ${d.telegram_enabled ? (d.telegram_sent ? 'sent' : 'FAILED (check token/chat id)') : 'disabled'}\n` +
-      `Email: ${d.email_enabled ? (d.email_sent ? 'sent' : 'FAILED (check SMTP settings)') : 'disabled'}`
-    );
+    const msg = `Telegram: ${d.telegram_enabled ? (d.telegram_sent ? 'sent' : 'FAILED') : 'disabled'}\nEmail: ${d.email_enabled ? (d.email_sent ? 'sent' : 'FAILED') : 'disabled'}`;
+    if (typeof showToast === 'function') showToast(msg.replace('\n', ' · '), d.telegram_sent || d.email_sent ? 'info' : 'warn', 7000);
+    else alert(msg);
   } catch (err) {
-    alert('Test failed: ' + err);
+    if (typeof showToast === 'function') showToast('Test failed: ' + err, 'err');
+    else alert('Test failed: ' + err);
   } finally { btn.disabled = false; }
 }
 </script>

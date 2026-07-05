@@ -1,11 +1,16 @@
 {% extends "base.html" %}
 {% block title %}Profile · CareerCopilot AI{% endblock %}
 {% block content %}
-<h1>Profile & CV</h1>
-<p class="small muted">Your CV is the source of truth. Upload it once and CareerCopilot derives your profile automatically; you can fine-tune everything in <a href="/settings">Settings</a>.</p>
 
-<div class="card">
-  <h2>Master resume</h2>
+<header class="page-header">
+  <div>
+    <h1 class="page-title">Profile & CV</h1>
+    <p class="page-sub">Your CV drives match scoring — fine-tune in <a href="/settings">Settings</a></p>
+  </div>
+</header>
+
+<section class="card panel-card">
+  <header class="panel-head"><h2>Master resume</h2></header>
   {% if cv_path %}
   <p class="small">Current: <code>{{ cv_path }}</code></p>
   {% else %}
@@ -15,41 +20,41 @@
     <input type="file" name="file" accept=".pdf,.docx,.doc,.txt" required>
     <button class="btn btn-accent" type="submit" id="cv-btn">Upload & parse</button>
   </form>
-  <p class="small muted mt">Tip: upload a <strong>DOCX</strong> to enable tailored resume generation (PDF works for profile parsing only).</p>
+  <p class="small muted mt">Tip: upload a <strong>DOCX</strong> to enable tailored resume generation.</p>
   <div id="cv-result" class="small mt"></div>
-</div>
+</section>
 
-<div class="grid cols-2">
-  <div class="card">
-    <h2>Current profile</h2>
-    <table class="list">
-      <tr><td class="muted">Name</td><td>{{ profile.full_name or '—' }}</td></tr>
-      <tr><td class="muted">Email</td><td>{{ profile.email or '—' }}</td></tr>
-      <tr><td class="muted">Phone</td><td>{{ profile.phone or '—' }}</td></tr>
-      <tr><td class="muted">Current employer</td><td>{{ profile.current_employer or '—' }}</td></tr>
-      <tr><td class="muted">Experience</td><td>{{ profile.experience_years or '—' }} years</td></tr>
-      <tr><td class="muted">Preferred locations</td><td>{{ profile.preferred_locations | join(', ') if profile.preferred_locations else '—' }}</td></tr>
-      <tr><td class="muted">Domains</td><td>{{ profile.preferred_domains | join(', ') if profile.preferred_domains else '—' }}</td></tr>
-      <tr><td class="muted">Interests</td><td>{{ profile.interests | join(', ') if profile.interests else '—' }}</td></tr>
-      <tr><td class="muted">Skills</td><td>{{ profile.skills | join(', ') if profile.skills else '—' }}</td></tr>
+<div class="profile-grid">
+  <section class="card panel-card">
+    <header class="panel-head"><h2>Current profile</h2></header>
+    <table class="kv-table">
+      <tr><td>Name</td><td>{{ profile.full_name or '—' }}</td></tr>
+      <tr><td>Email</td><td>{{ profile.email or '—' }}</td></tr>
+      <tr><td>Phone</td><td>{{ profile.phone or '—' }}</td></tr>
+      <tr><td>Current employer</td><td>{{ profile.current_employer or '—' }}</td></tr>
+      <tr><td>Experience</td><td>{{ profile.experience_years or '—' }} years</td></tr>
+      <tr><td>Preferred locations</td><td>{{ profile.preferred_locations | join(', ') if profile.preferred_locations else '—' }}</td></tr>
+      <tr><td>Domains</td><td>{{ profile.preferred_domains | join(', ') if profile.preferred_domains else '—' }}</td></tr>
+      <tr><td>Interests</td><td>{{ profile.interests | join(', ') if profile.interests else '—' }}</td></tr>
+      <tr><td>Skills</td><td>{{ profile.skills | join(', ') if profile.skills else '—' }}</td></tr>
     </table>
-  </div>
+  </section>
 
-  <div class="card">
-    <h2>Last parsed from CV</h2>
+  <section class="card panel-card">
+    <header class="panel-head"><h2>Last parsed from CV</h2></header>
     {% if parsed %}
-    <table class="list">
-      <tr><td class="muted">Name</td><td>{{ parsed.full_name or '—' }}</td></tr>
-      <tr><td class="muted">Email</td><td>{{ parsed.email or '—' }}</td></tr>
-      <tr><td class="muted">Phone</td><td>{{ parsed.phone or '—' }}</td></tr>
-      <tr><td class="muted">Experience</td><td>{{ parsed.experience_years or '—' }} years</td></tr>
-      <tr><td class="muted">Skills found</td><td>{{ parsed.skills | join(', ') if parsed.skills else '—' }}</td></tr>
-      <tr><td class="muted">Employers found</td><td>{{ parsed.employers | join('; ') if parsed.employers else '—' }}</td></tr>
+    <table class="kv-table">
+      <tr><td>Name</td><td>{{ parsed.full_name or '—' }}</td></tr>
+      <tr><td>Email</td><td>{{ parsed.email or '—' }}</td></tr>
+      <tr><td>Phone</td><td>{{ parsed.phone or '—' }}</td></tr>
+      <tr><td>Experience</td><td>{{ parsed.experience_years or '—' }} years</td></tr>
+      <tr><td>Skills found</td><td>{{ parsed.skills | join(', ') if parsed.skills else '—' }}</td></tr>
+      <tr><td>Employers found</td><td>{{ parsed.employers | join('; ') if parsed.employers else '—' }}</td></tr>
     </table>
     {% else %}
     <p class="muted">Upload a CV to see the parsed result.</p>
     {% endif %}
-  </div>
+  </section>
 </div>
 {% endblock %}
 

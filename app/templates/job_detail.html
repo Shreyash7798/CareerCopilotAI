@@ -2,24 +2,27 @@
 {% block title %}{{ job.title }} · CareerCopilot AI{% endblock %}
 {% block content %}
 <p class="small"><a href="/jobs">← Back to jobs</a></p>
-<h1>{{ job.title }}</h1>
-<p>
-  <span class="score {{ 'hi' if job.match_score >= 70 else 'mid' if job.match_score >= 45 else 'lo' }}">{{ job.match_score|round|int }}</span>
-  {% if job.is_high_priority %}<span class="badge hp">high priority</span>{% endif %}
-  {% if status_badge %}<span class="badge closed">{{ status_badge }}</span>{% endif %}
-  <strong>{{ job.company.name if job.company }}</strong> · {{ job.location or 'location n/a' }}
-  · <span class="muted small">via {{ job.source }}</span>
-  {% if job|job_age_label %} · <span class="muted small">{{ job|job_age_label }}</span>{% endif %}
-</p>
-{% if job.posted_at or job.discovered_at %}
-<p class="small muted">
-  {% if job.posted_at %}Posted {{ job.posted_at.strftime('%d %b %Y') }}{% endif %}
-  {% if job.posted_at and job.discovered_at %} · {% endif %}
-  {% if job.discovered_at %}Found by CareerCopilot {{ job.discovered_at.strftime('%d %b %Y') }}{% endif %}
-</p>
-{% endif %}
 
-<p>
+<div class="job-detail-hero">
+  <h1 class="page-title">{{ job.title }}</h1>
+  <p class="job-detail-meta">
+    <span class="score {{ 'hi' if job.match_score >= 70 else 'mid' if job.match_score >= 45 else 'lo' }}">{{ job.match_score|round|int }}</span>
+    {% if job.is_high_priority %}<span class="badge hp">high priority</span>{% endif %}
+    {% if status_badge %}<span class="badge closed">{{ status_badge }}</span>{% endif %}
+    <strong>{{ job.company.name if job.company }}</strong> · {{ job.location or 'location n/a' }}
+    · <span class="muted small">via {{ job.source }}</span>
+    {% if job|job_age_label %} · <span class="muted small">{{ job|job_age_label }}</span>{% endif %}
+  </p>
+  {% if job.posted_at or job.discovered_at %}
+  <p class="small muted">
+    {% if job.posted_at %}Posted {{ job.posted_at.strftime('%d %b %Y') }}{% endif %}
+    {% if job.posted_at and job.discovered_at %} · {% endif %}
+    {% if job.discovered_at %}Found {{ job.discovered_at.strftime('%d %b %Y') }}{% endif %}
+  </p>
+  {% endif %}
+</div>
+
+<div class="job-detail-actions">
   {% if job.url %}<a class="btn btn-accent" href="{{ job.url }}" target="_blank" rel="noopener">Open original posting ↗</a>{% endif %}
   <form class="inline-form" method="post" action="/jobs/{{ job.id }}/track">
     <button class="btn" type="submit">Track application</button>
@@ -33,11 +36,11 @@
   {% else %}
   <a class="btn" href="/profile">Upload CV for cover letter &amp; prep</a>
   {% endif %}
-</p>
+</div>
 
 <div class="grid cols-2">
-  <div class="card">
-    <h2>Why this score</h2>
+  <section class="card panel-card">
+    <header class="panel-head"><h2>Why this score</h2></header>
     {% for c in breakdown %}
       <div class="bar-row">
         <div class="name">{{ c.name.replace('_', ' ') }} <span class="muted">×{{ c.weight }}</span></div>
@@ -48,10 +51,10 @@
     {% else %}
       <p class="muted">No breakdown stored.</p>
     {% endfor %}
-  </div>
+  </section>
 
-  <div class="card">
-    <h2>Application materials</h2>
+  <section class="card panel-card">
+    <header class="panel-head"><h2>Application materials</h2></header>
     <p class="small muted">Resume tailoring reorders your DOCX bullets. Cover letters and interview prep use your profile facts only — nothing is invented.</p>
     <h3 class="small">Resumes</h3>
     {% for r in resumes %}
@@ -66,12 +69,12 @@
         <a href="/api/resumes/{{ r.id }}/download?fmt=docx">DOCX</a>
       </div>
     {% else %}<p class="small muted">None yet.</p>{% endfor %}
-  </div>
+  </section>
 </div>
 
 {% if interview_prep %}
-<div class="card">
-  <h2>Interview prep</h2>
+<section class="card panel-card">
+  <header class="panel-head"><h2>Interview prep</h2></header>
   <p class="small"><strong>Elevator pitch:</strong> {{ interview_prep.elevator_pitch }}</p>
   {% if interview_prep.matched_skills %}
   <p class="small mt"><strong>Skills to emphasise:</strong>
@@ -85,12 +88,12 @@
   <ul class="small">{% for p in interview_prep.star_prompts %}<li>{{ p }}</li>{% endfor %}</ul>
   <h3 class="small mt">Questions for the interviewer</h3>
   <ul class="small">{% for q in interview_prep.questions_for_interviewer %}<li>{{ q }}</li>{% endfor %}</ul>
-</div>
+</section>
 {% endif %}
 
 {% if recruiters %}
-<div class="card">
-  <h2>Recruiters (public info)</h2>
+<section class="card panel-card">
+  <header class="panel-head"><h2>Recruiters (public info)</h2></header>
   <table class="list">
     <tr><th>Name</th><th>Email</th><th>Requisitions</th></tr>
     {% for r in recruiters %}
@@ -101,13 +104,13 @@
     </tr>
     {% endfor %}
   </table>
-</div>
+</section>
 {% endif %}
 
-<div class="card">
-  <h2>Job description</h2>
+<section class="card panel-card">
+  <header class="panel-head"><h2>Job description</h2></header>
   <div class="desc">{{ job.description or 'No description captured for this posting.' }}</div>
-</div>
+</section>
 {% endblock %}
 
 {% block scripts %}
