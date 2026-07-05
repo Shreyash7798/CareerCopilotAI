@@ -39,7 +39,39 @@ def get_sessionmaker() -> sessionmaker:
 def init_db() -> None:
     from app import models  # noqa: F401  (register models)
 
-    Base.metadata.create_all(get_engine())
+    engine = get_engine()
+    Base.metadata.create_all(engine)
+    _auto_migrate(engine)
+
+
+def _auto_migrate(engine) -> None:
+    """Add columns that exist in the models but not in the live SQLite file.
+
+    create_all() only creates missing tables, never missing columns, so
+    deployments that pull a new version would otherwise crash on new fields.
+    SQLite supports ALTER TABLE ... ADD COLUMN, which covers our needs.
+    """
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(engine)
+    for table in Base.metadata.sorted_tables:
+        if not inspector.has_table(table.name):
+            continue
+        existing = {col["name"] for col in inspector.get_columns(table.name)}
+        for column in table.columns:
+            if column.name in existing:
+                continue
+            ddl = f'ALTER TABLE {table.name} ADD COLUMN {column.name} {column.type.compile(engine.dialect)}'
+            default = getattr(column.default, "arg", None)
+            if default is not None and not callable(default):
+                if isinstance(default, bool):
+                    ddl += f" DEFAULT {int(default)}"
+                elif isinstance(default, (int, float)):
+                    ddl += f" DEFAULT {default}"
+                elif isinstance(default, str):
+                    ddl += f" DEFAULT '{default}'"
+            with engine.begin() as conn:
+                conn.execute(text(ddl))
 
 
 @contextmanager

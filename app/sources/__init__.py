@@ -8,13 +8,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from app.sources import careers_page, greenhouse, lever, workday
+from app.sources import careers_page, greenhouse, lever, smartrecruiters, workday
 from app.sources.base import RawJob, SourceError
 
 REGISTRY: dict[str, Callable[[dict], list[RawJob]]] = {
     "greenhouse": greenhouse.fetch,
     "lever": lever.fetch,
     "workday": workday.fetch,
+    "smartrecruiters": smartrecruiters.fetch,
     "careers_page": careers_page.fetch,
 }
 

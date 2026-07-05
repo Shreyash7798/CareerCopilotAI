@@ -1,26 +1,147 @@
 {% extends "base.html" %}
 {% block title %}Companies · CareerCopilot AI{% endblock %}
+
+{% macro company_form(action, c=None, cfg=None) %}
+<form method="post" action="{{ action }}" class="grid cols-3">
+  <label class="f">Company name * <input name="name" required value="{{ c.name if c else '' }}"></label>
+  <label class="f">Sector <input name="sector" value="{{ c.sector or '' if c else '' }}" placeholder="e.g. Consulting & Advisory"></label>
+  <label class="f">Country <input name="country" value="{{ c.country or '' if c else '' }}"></label>
+  <label class="f">ATS type
+    <select name="ats_type">
+      <option value="">— not monitored —</option>
+      {% for t in ats_types %}
+      <option value="{{ t }}" {{ 'selected' if c and c.ats_type == t }}>{{ t }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="f">Career URL <input name="career_url" value="{{ c.career_url or '' if c else '' }}" placeholder="needed for sap/oracle/taleo/careers_page"></label>
+  <label class="f">Board token <input name="board" value="{{ cfg.board if cfg and cfg.board else '' }}" placeholder="greenhouse/lever/smartrecruiters"></label>
+  <label class="f">Workday host <input name="host" value="{{ cfg.host if cfg and cfg.host else '' }}" placeholder="x.wd1.myworkdayjobs.com"></label>
+  <label class="f">Workday tenant <input name="tenant" value="{{ cfg.tenant if cfg and cfg.tenant else '' }}"></label>
+  <label class="f">Workday site <input name="site" value="{{ cfg.site if cfg and cfg.site else '' }}"></label>
+  <label class="f">Search text <input name="search_text" value="{{ cfg.search_text if cfg and cfg.search_text else '' }}" placeholder="server-side keyword filter"></label>
+  <label class="f">Link selector <input name="link_selector" value="{{ cfg.link_selector if cfg and cfg.link_selector else '' }}" placeholder="CSS selector for job links"></label>
+  <label class="f">Keywords <input name="keywords" value="{{ c.keywords or '' if c else '' }}" placeholder="comma-separated title filter"></label>
+  <label class="f">Refresh interval (min) <input name="refresh_interval_minutes" type="number" min="15" value="{{ c.refresh_interval_minutes or '' if c else '' }}" placeholder="blank = every run"></label>
+  <label class="f">Priority
+    <select name="priority">
+      {% for p in priorities %}
+      <option value="{{ p }}" {{ 'selected' if c and c.priority == p }}>{{ p }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="f">Notes <input name="notes" value="{{ c.notes or '' if c else '' }}"></label>
+  <label class="f"><input type="checkbox" name="render" value="true" {{ 'checked' if cfg and cfg.render }}> Render with browser (JavaScript pages)</label>
+  <label class="f"><input type="checkbox" name="enabled" value="true" {{ 'checked' if (c and c.enabled) or not c }}> Enabled</label>
+  <label class="f"><input type="checkbox" name="recruiter_search_enabled" value="true" {{ 'checked' if c and c.recruiter_search_enabled }}> Recruiter search (future)</label>
+  <div><button class="btn btn-accent" type="submit">Save</button></div>
+</form>
+{% endmacro %}
+
 {% block content %}
-<h1>Company intelligence</h1>
+<h1>Companies</h1>
+<p class="small muted">Companies are managed here — no server access or config files needed. Set an ATS type to have the discovery pipeline monitor a company; leave it unset for tracking-only records.</p>
+
+<div class="card">
+  <h2>Add from catalog</h2>
+  <p class="small muted">Pre-verified companies by sector. One click to start monitoring; entries flagged as bot-protected are added disabled so you can try Test Connection first.</p>
+  {% for sec in catalog %}
+  <details class="rowform">
+    <summary><strong>{{ sec.name }}</strong> <span class="muted small">({{ sec.companies | length }} companies)</span></summary>
+    <div class="table-wrap mt">
+      <table class="list">
+        {% for item in sec.companies %}
+        <tr>
+          <td><strong>{{ item.name }}</strong></td>
+          <td class="small muted">{{ item.ats_type }} · {{ item.country or '' }}</td>
+          <td class="small">{{ item.caveat or '' }}</td>
+          <td>
+            {% if item.name.lower() in existing_names %}
+            <span class="badge hp">added</span>
+            {% else %}
+            <form class="inline-form" method="post" action="/companies/catalog/add">
+              <input type="hidden" name="sector" value="{{ sec.name }}">
+              <input type="hidden" name="name" value="{{ item.name }}">
+              <button class="btn btn-sm" type="submit">Add</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+  </details>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <details class="rowform">
+    <summary><strong>Add a company manually</strong></summary>
+    <div class="mt">{{ company_form('/companies/new') }}</div>
+  </details>
+</div>
 
 {% for c in companies %}
 {% set s = stats[c.id] %}
 <div class="card">
   <div>
     <strong>{{ c.name }}</strong>
+    {% if c.ats_type %}
+      <span class="badge">{{ c.ats_type }}</span>
+      {% if c.enabled %}<span class="badge hp">monitoring</span>{% else %}<span class="badge status-Rejected">disabled</span>{% endif %}
+    {% endif %}
     {% if c.is_preferred %}<span class="badge hp">preferred</span>{% endif %}
+    {% if c.sector %}<span class="badge">{{ c.sector }}</span>{% endif %}
+    {% if c.priority and c.priority != 'normal' %}<span class="badge">priority: {{ c.priority }}</span>{% endif %}
   </div>
   <div class="small muted mt">
     Active roles: {{ s.active_jobs }} ({{ s.high_priority }} high priority) ·
     Avg match: {{ s.avg_score }} ·
     Your applications: {{ s.applications }}
+    {% if c.last_run_at %} · Last checked: {{ c.last_run_at.strftime('%d %b %H:%M') }} ({{ c.last_run_status or '' }}){% endif %}
   </div>
   {% if s.top_locations %}
   <div class="small mt">Hiring in: {% for loc in s.top_locations %}<span class="badge" style="margin-right:4px">{{ loc }}</span>{% endfor %}</div>
   {% endif %}
-  <div class="small mt"><a href="/jobs?company={{ c.name }}">View open roles →</a></div>
+  <div class="small mt">
+    <a href="/jobs?company={{ c.name }}">View open roles →</a>
+    {% if c.ats_type %}
+    · <button class="btn btn-sm" onclick="testConnection({{ c.id }}, this)">Test connection</button>
+    <form class="inline-form" method="post" action="/companies/{{ c.id }}/toggle">
+      <button class="btn btn-sm" type="submit">{{ 'Disable' if c.enabled else 'Enable' }}</button>
+    </form>
+    {% endif %}
+  </div>
+
+  <details class="rowform mt">
+    <summary class="small muted">Edit</summary>
+    <div class="mt">{{ company_form('/companies/' ~ c.id ~ '/update', c, s.ats_config) }}</div>
+    <form method="post" action="/companies/{{ c.id }}/delete" onsubmit="return confirm('Remove this company? (Records with jobs/recruiters are kept but unmonitored.)')">
+      <button class="btn btn-danger btn-sm" type="submit">Delete / stop monitoring</button>
+    </form>
+  </details>
 </div>
 {% else %}
-<div class="card"><p class="muted">No companies yet — they appear automatically as jobs are discovered.</p></div>
+<div class="card"><p class="muted">No companies yet. Add them from the catalog above or manually.</p></div>
 {% endfor %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function testConnection(companyId, btn) {
+  btn.disabled = true; const original = btn.textContent; btn.textContent = 'Testing…';
+  try {
+    const res = await fetch(`/api/companies/${companyId}/test`, {method: 'POST'});
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'failed');
+    alert(data.ok
+      ? `Connection OK: ${data.jobs_found} jobs found.` + (data.sample ? `\nSample: ${data.sample}` : '')
+      : `Connection failed: ${data.error}`);
+  } catch (err) {
+    alert('Test failed: ' + err.message);
+  } finally {
+    btn.disabled = false; btn.textContent = original;
+  }
+}
+</script>
 {% endblock %}

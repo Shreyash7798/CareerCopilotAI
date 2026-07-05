@@ -15,11 +15,13 @@ from sqlalchemy.orm import Session
 
 from app import cv_parser, resume_engine
 from app.analytics import compute_analytics
-from app.config import data_dir, get_profile, save_profile
+from app.config import data_dir, get_company_catalog, get_profile, save_profile
 from app.db import get_db, session_scope
 from app.exporter import export_excel
 from app.models import (
     APPLICATION_STATUSES,
+    ATS_TYPES,
+    COMPANY_PRIORITIES,
     Application,
     Company,
     Job,
@@ -28,7 +30,7 @@ from app.models import (
     UserProfile,
     log_activity,
 )
-from app.notifications import build_daily_summary, send_daily_summary
+from app.notifications import build_daily_summary, send_daily_summary, send_test_notification
 from app.pipeline import run_pipeline
 
 router = APIRouter(prefix="/api", tags=["api"])
@@ -186,6 +188,141 @@ def api_delete_application(app_id: int):
             raise HTTPException(404, "Application not found")
         session.delete(application)
         return {"deleted": app_id}
+
+
+# ---------------------------------------------------------------- companies
+
+
+class CompanyIn(BaseModel):
+    name: str
+    sector: str | None = None
+    country: str | None = None
+    ats_type: str | None = None
+    career_url: str | None = None
+    ats_config: dict | None = None
+    keywords: str | None = None
+    refresh_interval_minutes: int | None = None
+    priority: str = "normal"
+    enabled: bool = True
+    recruiter_search_enabled: bool = False
+    notes: str | None = None
+
+
+def _company_dict(company: Company) -> dict:
+    from app.company_sources import parse_ats_config
+
+    return {
+        "id": company.id,
+        "name": company.name,
+        "sector": company.sector,
+        "country": company.country,
+        "ats_type": company.ats_type,
+        "career_url": company.career_url,
+        "ats_config": parse_ats_config(company),
+        "keywords": company.keywords,
+        "refresh_interval_minutes": company.refresh_interval_minutes,
+        "priority": company.priority,
+        "enabled": company.enabled,
+        "recruiter_search_enabled": company.recruiter_search_enabled,
+        "is_preferred": company.is_preferred,
+        "last_run_at": company.last_run_at.isoformat() if company.last_run_at else None,
+        "last_run_status": company.last_run_status,
+        "notes": company.notes,
+    }
+
+
+def _apply_company_payload(company: Company, payload: CompanyIn) -> None:
+    if payload.ats_type is not None and payload.ats_type not in ATS_TYPES + [""]:
+        raise HTTPException(400, f"ats_type must be one of {ATS_TYPES}")
+    company.name = payload.name.strip()
+    company.sector = payload.sector
+    company.country = payload.country
+    company.ats_type = payload.ats_type or None
+    company.career_url = payload.career_url
+    company.ats_config = json.dumps(payload.ats_config) if payload.ats_config else None
+    company.keywords = payload.keywords
+    company.refresh_interval_minutes = payload.refresh_interval_minutes
+    company.priority = payload.priority if payload.priority in COMPANY_PRIORITIES else "normal"
+    company.enabled = payload.enabled
+    company.recruiter_search_enabled = payload.recruiter_search_enabled
+    company.notes = payload.notes
+
+
+@router.get("/companies")
+def api_companies(db: Session = Depends(get_db), monitored_only: bool = False):
+    stmt = select(Company).order_by(Company.name)
+    if monitored_only:
+        stmt = stmt.where(Company.ats_type.isnot(None))
+    return [_company_dict(c) for c in db.execute(stmt).scalars()]
+
+
+@router.post("/companies")
+def api_create_company(payload: CompanyIn):
+    with session_scope() as session:
+        company = session.execute(
+            select(Company).where(Company.name == payload.name.strip())
+        ).scalar_one_or_none()
+        if company is None:
+            company = Company(name=payload.name.strip())
+            session.add(company)
+        _apply_company_payload(company, payload)
+        session.flush()
+        log_activity(session, "config", f"Company added/updated via API: {company.name}")
+        return {"id": company.id}
+
+
+@router.put("/companies/{company_id}")
+def api_update_company(company_id: int, payload: CompanyIn):
+    with session_scope() as session:
+        company = session.get(Company, company_id)
+        if company is None:
+            raise HTTPException(404, "Company not found")
+        _apply_company_payload(company, payload)
+        log_activity(session, "config", f"Company updated via API: {company.name}")
+        return {"id": company.id}
+
+
+@router.delete("/companies/{company_id}")
+def api_delete_company(company_id: int):
+    with session_scope() as session:
+        company = session.get(Company, company_id)
+        if company is None:
+            raise HTTPException(404, "Company not found")
+        if company.jobs or company.recruiters:
+            company.ats_type = None
+            company.enabled = False
+            return {"unmonitored": company_id}
+        session.delete(company)
+        return {"deleted": company_id}
+
+
+@router.post("/companies/{company_id}/test")
+def api_test_company(company_id: int, db: Session = Depends(get_db)):
+    """Run the company's connector once and report what came back, so users
+    can validate a configuration from the dashboard without SSH."""
+    from app.company_sources import entry_from_company
+    from app.sources import REGISTRY
+
+    company = db.get(Company, company_id)
+    if company is None:
+        raise HTTPException(404, "Company not found")
+    entry = entry_from_company(company)
+    if entry is None:
+        raise HTTPException(400, "Company has no ATS type configured")
+    fetcher = REGISTRY.get(entry["type"])
+    if fetcher is None:
+        raise HTTPException(400, f"No connector for type '{entry['type']}'")
+    try:
+        jobs = fetcher(entry)
+    except Exception as exc:  # noqa: BLE001 - reported to the user
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}", "jobs_found": 0}
+    sample = f"{jobs[0].title} ({jobs[0].location})" if jobs else None
+    return {"ok": True, "jobs_found": len(jobs), "sample": sample}
+
+
+@router.get("/companies/catalog")
+def api_company_catalog():
+    return get_company_catalog()
 
 
 # ---------------------------------------------------------------- recruiters
@@ -395,6 +532,12 @@ def api_daily_summary():
 def api_send_daily_summary():
     send_daily_summary()
     return {"status": "sent"}
+
+
+@router.post("/notifications/test")
+def api_test_notifications():
+    """Send a test message on all configured channels and report the outcome."""
+    return send_test_notification()
 
 
 # ---------------------------------------------------------------- analytics
