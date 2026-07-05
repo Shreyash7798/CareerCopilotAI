@@ -153,9 +153,28 @@ deployments also consider HTTPS via a reverse proxy or Cloudflare Tunnel.
 ### Oracle Cloud: keep the server in sync with GitHub
 
 Merging a PR updates GitHub only — the VM does **not** auto-update unless you
-wire up deploy. Pick **one** of these:
+wire up deploy.
 
-**Option A — GitHub Actions (deploy on every merge to `main`)**
+**First time (required once)** — open Oracle Cloud Console → your instance →
+**Console connection** (browser SSH), paste:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Shreyash7798/CareerCopilotAI/main/scripts/bootstrap-oci.sh | bash
+```
+
+This pulls the latest code, restarts the app, sets up cron auto-pull, and prints
+the three GitHub secrets to add (`OCI_HOST`, `OCI_USER`, `OCI_SSH_KEY`).
+After that, every merge to `main` deploys automatically.
+
+**Verify**
+```bash
+curl http://161.118.184.228/api/version
+# {"revision":"e65c971","project":"CareerCopilotAI"}  — not 404
+```
+
+Pick **one** ongoing sync method (bootstrap sets up cron; GitHub Actions is optional):
+
+**Option A — GitHub Actions over SSH** (deploy on every merge to `main`)
 
 1. On the VM, create a deploy key and authorize it:
    ```bash

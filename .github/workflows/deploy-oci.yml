@@ -1,12 +1,11 @@
 # Deploy to Oracle Cloud when main is updated.
 #
-# Option A — SSH (add secrets OCI_HOST, OCI_USER, OCI_SSH_KEY)
-# Option B — HTTP hook (add secrets DEPLOY_HOOK_URL, DEPLOY_TOKEN)
-#   DEPLOY_HOOK_URL = http://161.118.184.228/api/deploy/hook
-#   DEPLOY_TOKEN    = same value as app.deploy_token in config/settings.yaml on the VM
+# FIRST TIME: run scripts/bootstrap-oci.sh on the VM (Oracle Console SSH):
+#   curl -fsSL https://raw.githubusercontent.com/Shreyash7798/CareerCopilotAI/main/scripts/bootstrap-oci.sh | bash
 #
-# First-time bootstrap still needs one manual SSH:
-#   cd ~/CareerCopilotAI && git pull origin main && ./scripts/deploy.sh
+# Then add GitHub secrets printed by bootstrap: OCI_HOST, OCI_USER, OCI_SSH_KEY
+#
+# Manual re-deploy: Actions → Deploy to OCI → Run workflow
 
 name: Deploy to OCI
 
@@ -20,43 +19,48 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy-ssh:
-    if: ${{ secrets.OCI_HOST != '' }}
+  deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy over SSH
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.OCI_HOST }}
-          username: ${{ secrets.OCI_USER }}
-          key: ${{ secrets.OCI_SSH_KEY }}
-          script_stop: true
-          script: |
-            set -euo pipefail
-            APP_DIR="/home/ubuntu/CareerCopilotAI"
-            cd "$APP_DIR"
-            git fetch origin main
-            git reset --hard origin/main
-            chmod +x scripts/deploy.sh
-            ./scripts/deploy.sh
-            curl -fsS http://127.0.0.1:8000/api/version
-
-  deploy-hook:
-    if: ${{ secrets.OCI_HOST == '' && secrets.DEPLOY_HOOK_URL != '' }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Deploy via HTTP hook
+      - name: Deploy to Oracle Cloud
+        env:
+          OCI_HOST: ${{ secrets.OCI_HOST }}
+          OCI_USER: ${{ secrets.OCI_USER }}
+          OCI_SSH_KEY: ${{ secrets.OCI_SSH_KEY }}
+          DEPLOY_HOOK_URL: ${{ secrets.DEPLOY_HOOK_URL }}
+          DEPLOY_HOOK_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
         run: |
-          curl -fsS -X POST "${{ secrets.DEPLOY_HOOK_URL }}" \
-            -H "Authorization: Bearer ${{ secrets.DEPLOY_TOKEN }}"
+          set -euo pipefail
+          APP_DIR="/home/ubuntu/CareerCopilotAI"
+          BOOTSTRAP="curl -fsSL https://raw.githubusercontent.com/Shreyash7798/CareerCopilotAI/main/scripts/bootstrap-oci.sh | bash"
 
-  deploy-missing:
-    if: ${{ secrets.OCI_HOST == '' && secrets.DEPLOY_HOOK_URL == '' }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: No deploy credentials configured
-        run: |
-          echo "::error::Configure either SSH secrets (OCI_HOST, OCI_USER, OCI_SSH_KEY)"
-          echo "::error::or HTTP hook secrets (DEPLOY_HOOK_URL, DEPLOY_TOKEN)."
-          echo "::error::Or SSH to the VM once: cd ~/CareerCopilotAI && git pull && ./scripts/deploy.sh"
+          if [ -n "${OCI_HOST}" ] && [ -n "${OCI_USER}" ] && [ -n "${OCI_SSH_KEY}" ]; then
+            echo "Deploying via SSH to ${OCI_USER}@${OCI_HOST}"
+            mkdir -p ~/.ssh
+            printf '%s\n' "$OCI_SSH_KEY" > ~/.ssh/deploy_key
+            chmod 600 ~/.ssh/deploy_key
+            ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o BatchMode=yes \
+              "${OCI_USER}@${OCI_HOST}" bash -s <<SCRIPT
+          set -euo pipefail
+          cd ${APP_DIR}
+          git fetch origin main
+          git reset --hard origin/main
+          chmod +x scripts/deploy.sh
+          ./scripts/deploy.sh
+          curl -fsS http://127.0.0.1:8000/api/version
+          SCRIPT
+            exit 0
+          fi
+
+          if [ -n "${DEPLOY_HOOK_URL}" ] && [ -n "${DEPLOY_HOOK_TOKEN}" ]; then
+            echo "Deploying via HTTP hook"
+            curl -fsS -X POST "${DEPLOY_HOOK_URL}" \
+              -H "Authorization: Bearer ${DEPLOY_HOOK_TOKEN}"
+            exit 0
+          fi
+
+          echo "::warning::No OCI deploy credentials configured."
+          echo "::warning::Run this ONCE in Oracle Cloud Console SSH:"
+          echo "::warning::  ${BOOTSTRAP}"
+          echo "::warning::Then add the printed secrets to GitHub Actions."
           exit 1
