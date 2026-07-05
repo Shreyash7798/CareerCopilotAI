@@ -32,6 +32,7 @@
   <main class="content">
     {% block content %}{% endblock %}
   </main>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <footer class="footer">
     CareerCopilot AI · local-first ·
     <a href="/api/exports/excel/download">Download Excel</a> ·
@@ -40,19 +41,58 @@
     <form class="inline-form" method="post" action="/logout"><button class="btn btn-sm" type="submit" style="border:none;background:none;color:var(--muted);cursor:pointer">Sign out</button></form>
   </footer>
   <script>
+    const DISCOVERY_COOLDOWN_MS = 15 * 60 * 1000;
+
+    function showToast(message, kind = 'info', ms = 5000) {
+      const el = document.getElementById('toast');
+      if (!el) return;
+      el.textContent = message;
+      el.className = 'toast show ' + kind;
+      clearTimeout(el._timer);
+      el._timer = setTimeout(() => { el.className = 'toast'; }, ms);
+    }
+
+    function discoveryCooldownRemaining() {
+      const last = Number(sessionStorage.getItem('cc_discovery_triggered') || 0);
+      if (!last) return 0;
+      return Math.max(0, DISCOVERY_COOLDOWN_MS - (Date.now() - last));
+    }
+
     async function runPipeline(event) {
       event.preventDefault();
       const btn = document.getElementById('run-btn');
-      btn.disabled = true; btn.textContent = 'Running…';
+      const remaining = discoveryCooldownRemaining();
+      if (remaining > 0) {
+        const mins = Math.ceil(remaining / 60000);
+        showToast(
+          `Discovery already ran recently. Auto-runs every 3 hours — check back in ~${mins} min.`,
+          'warn',
+          6000
+        );
+        return false;
+      }
+      btn.disabled = true;
+      btn.textContent = 'Starting…';
       try {
         const res = await fetch('/api/pipeline/run', {method: 'POST'});
         const data = await res.json();
-        alert('Discovery started in the background. Refresh in a minute to see new jobs.');
-        location.reload();
+        if (data.status === 'skipped') {
+          showToast(data.message || 'Discovery already running.', 'warn', 6000);
+          return false;
+        }
+        if (!res.ok) throw new Error(data.detail || 'Request failed');
+        sessionStorage.setItem('cc_discovery_triggered', String(Date.now()));
+        showToast('Discovery started. New jobs usually appear in 2–5 minutes.', 'info', 7000);
+        btn.textContent = 'Running…';
+        setTimeout(() => {
+          btn.disabled = false;
+          btn.textContent = 'Run discovery';
+        }, 60000);
+        return false;
       } catch (err) {
-        alert('Discovery failed: ' + err);
-      } finally {
-        btn.disabled = false; btn.textContent = 'Run discovery';
+        showToast('Discovery failed: ' + err.message, 'err', 7000);
+        btn.disabled = false;
+        btn.textContent = 'Run discovery';
       }
       return false;
     }

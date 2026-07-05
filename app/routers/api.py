@@ -98,8 +98,32 @@ def _job_dict(job: Job) -> dict:
 
 
 @router.post("/pipeline/run")
-def api_run_pipeline(background: BackgroundTasks):
+def api_run_pipeline(background: BackgroundTasks, db: Session = Depends(get_db)):
     """Trigger a discovery run in the background."""
+    from datetime import datetime, timedelta
+
+    from sqlalchemy import select
+
+    from app.models import ActivityLog
+
+    recent = db.execute(
+        select(ActivityLog.timestamp)
+        .where(
+            ActivityLog.category == "discovery",
+            ActivityLog.message.like("Pipeline run:%"),
+        )
+        .order_by(ActivityLog.timestamp.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if recent is not None:
+        now = datetime.utcnow()
+        recent_naive = recent.replace(tzinfo=None) if getattr(recent, "tzinfo", None) else recent
+        if now - recent_naive < timedelta(minutes=15):
+            return {
+                "status": "skipped",
+                "message": "Discovery ran recently. It auto-runs every 3 hours — no need to click again.",
+            }
+
     background.add_task(run_pipeline)
     return {"status": "started"}
 

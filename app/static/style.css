@@ -141,3 +141,16 @@ details.rowform { border-top: 1px solid var(--line); padding: 8px 0; }
 details.rowform summary { cursor: pointer; }
 .desc { white-space: pre-wrap; font-size: .9rem; max-height: 500px; overflow-y: auto; }
 .pagination { display: flex; gap: 8px; justify-content: center; margin-top: 14px; }
+
+.toast {
+  position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  transform: translateX(-50%); z-index: 100;
+  max-width: min(92vw, 420px); padding: 12px 16px; border-radius: 10px;
+  background: var(--ink); color: #fff; font-size: .88rem; line-height: 1.4;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, .25);
+  opacity: 0; pointer-events: none; transition: opacity .2s ease;
+}
+.toast.show { opacity: 1; }
+.toast.info { background: var(--ink); }
+.toast.warn { background: #92400e; }
+.toast.err { background: var(--bad); }
