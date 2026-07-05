@@ -52,6 +52,53 @@ def _parse_date(value: str | None) -> datetime | None:
         return None
 
 
+@router.get("/login", response_class=HTMLResponse)
+def login_page(request: Request, next: str = "/"):
+    from app.auth import configured_password
+
+    if not configured_password():
+        return RedirectResponse("/", status_code=303)
+    return templates.TemplateResponse(
+        request, "login.html", {"error": None, "next_path": next}
+    )
+
+
+@router.post("/login")
+def login_submit(request: Request, password: str = Form(...), next: str = Form("/")):
+    from app.auth import COOKIE_NAME, configured_password, session_token
+    import hmac as hmac_mod
+
+    expected = configured_password()
+    if not expected:
+        return RedirectResponse("/", status_code=303)
+    if not hmac_mod.compare_digest(password, expected):
+        return templates.TemplateResponse(
+            request,
+            "login.html",
+            {"error": "Wrong password.", "next_path": next},
+            status_code=401,
+        )
+    target = next if next.startswith("/") and not next.startswith("//") else "/"
+    response = RedirectResponse(target, status_code=303)
+    response.set_cookie(
+        COOKIE_NAME,
+        session_token(expected),
+        httponly=True,
+        samesite="lax",
+        max_age=60 * 60 * 24 * 30,
+    )
+    return response
+
+
+@router.post("/logout")
+def logout():
+    from app.auth import COOKIE_NAME
+
+    response = RedirectResponse("/login", status_code=303)
+    response.delete_cookie(COOKIE_NAME)
+    return response
+
+
 @router.get("/", response_class=HTMLResponse)
 def dashboard(request: Request, db: Session = Depends(get_db)):
     analytics = compute_analytics(db)
@@ -637,6 +684,10 @@ def settings_profile_update(
     )
     settings["profile"] = profile
     save_settings(settings)
+    # Re-rank existing jobs for the updated preferences.
+    from app.pipeline import rescore_all_jobs
+
+    rescore_all_jobs()
     return RedirectResponse("/settings", status_code=303)
 
 

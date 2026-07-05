@@ -26,7 +26,12 @@ your accounts.
   a fuzzy pass for near-identical titles.
 - **Explainable match scoring** (0–100) across six weighted components:
   role fit, location fit, experience fit, industry fit, skills fit and
-  company preference. Every job shows *why* it got its score.
+  company preference. Every job shows *why* it got its score. All jobs are
+  re-scored automatically whenever you upload a CV or change your profile,
+  so the ranking always reflects the current user.
+- **Job lifecycle**: postings that disappear from complete-list sources
+  (Greenhouse, Lever) are marked closed automatically and reactivated if
+  they return.
 - **CV parsing**: upload a PDF/DOCX/TXT resume; name, contacts, experience
   years, skills and employers are extracted locally to seed your profile.
 - **Resume engine**: generates a tailored DOCX per job by reordering your
@@ -135,9 +140,10 @@ Restart=on-failure
 WantedBy=multi-user.target
 ```
 
-If you expose the app beyond a private network (Tailscale/VPN), put it behind
-authentication (e.g. Cloudflare Access, an authenticated reverse proxy) —
-v1 has no built-in login because it is designed to be private by default.
+If you expose the app beyond a private network, set `app.auth_password` in
+`config/settings.yaml` — the dashboard and API then require login (sessions
+survive 30 days; changing the password signs everyone out). For public
+deployments also consider HTTPS via a reverse proxy or Cloudflare Tunnel.
 
 ## Architecture
 

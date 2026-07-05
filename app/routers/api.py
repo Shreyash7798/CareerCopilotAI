@@ -31,7 +31,7 @@ from app.models import (
     log_activity,
 )
 from app.notifications import build_daily_summary, send_daily_summary, send_test_notification
-from app.pipeline import run_pipeline
+from app.pipeline import rescore_all_jobs, run_pipeline
 
 router = APIRouter(prefix="/api", tags=["api"])
 
@@ -68,11 +68,14 @@ def api_run_pipeline_sync():
     return {
         "sources_run": result.sources_run,
         "sources_failed": result.sources_failed,
+        "sources_skipped": result.sources_skipped,
         "fetched": result.fetched,
         "filtered_out": result.filtered_out,
         "duplicates": result.duplicates,
         "new_jobs": result.new_jobs,
         "high_priority": result.high_priority,
+        "deactivated": result.deactivated,
+        "reactivated": result.reactivated,
         "errors": result.errors,
     }
 
@@ -437,7 +440,19 @@ async def api_upload_cv(file: UploadFile):
         row.profile_json = json.dumps(parsed_no_text)
         log_activity(session, "profile", f"CV uploaded and parsed: {file.filename}")
 
-    return {"parsed": {k: v for k, v in parsed.items() if k != "raw_text"}, "cv_path": str(target)}
+    # Existing discoveries must re-rank for the new profile immediately.
+    rescored = rescore_all_jobs()
+    return {
+        "parsed": {k: v for k, v in parsed.items() if k != "raw_text"},
+        "cv_path": str(target),
+        "rescored_jobs": rescored,
+    }
+
+
+@router.post("/jobs/rescore")
+def api_rescore_jobs():
+    """Re-score all stored jobs against the current profile and weights."""
+    return {"rescored": rescore_all_jobs()}
 
 
 # ---------------------------------------------------------------- resumes
