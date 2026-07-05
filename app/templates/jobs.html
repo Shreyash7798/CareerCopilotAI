@@ -1,55 +1,86 @@
 {% extends "base.html" %}
 {% block title %}Jobs · CareerCopilot AI{% endblock %}
 {% block content %}
-<h1>Jobs <span class="muted small">({{ total }} matching)</span></h1>
 
-<div class="card">
-  <h2>Add from LinkedIn</h2>
-  <p class="small muted">Paste a public LinkedIn job link from your phone (Share → Copy link). No login required — uses LinkedIn's public guest page.</p>
-  <form class="filters" method="post" action="/jobs/import-linkedin" onsubmit="return importLinkedIn(event)">
-    <input type="url" name="url" id="linkedin-url" placeholder="https://www.linkedin.com/jobs/view/…" required style="flex:1">
-    <button class="btn btn-accent" type="submit" id="linkedin-import-btn">Import job</button>
+<header class="page-header">
+  <div>
+    <h1 class="page-title">Jobs</h1>
+    <p class="page-sub">{{ total }} matching role{{ 's' if total != 1 else '' }}{% if has_filters %} · filtered{% endif %}</p>
+  </div>
+  {% if has_filters %}
+  <a class="btn btn-sm" href="/jobs">Clear filters</a>
+  {% endif %}
+</header>
+
+<section class="card panel-card">
+  <header class="panel-head"><h2>Add from LinkedIn</h2></header>
+  <p class="small muted">Paste a public LinkedIn job link (Share → Copy link). No login required.</p>
+  <form class="filter-bar" method="post" action="/jobs/import-linkedin" onsubmit="return importLinkedIn(event)">
+    <input type="url" name="url" id="linkedin-url" class="filter-grow" placeholder="https://www.linkedin.com/jobs/view/…" required>
+    <button class="btn btn-accent" type="submit" id="linkedin-import-btn">Import</button>
   </form>
-</div>
+</section>
 
-<form class="filters" method="get" action="/jobs">
-  <input type="search" name="q" placeholder="Title contains…" value="{{ filters.q }}">
-  <input type="text" name="location" placeholder="Location…" value="{{ filters.location }}">
-  <input type="text" name="company" placeholder="Company…" value="{{ filters.company }}">
-  <input type="number" name="min_score" min="0" max="100" step="5" placeholder="Min score" value="{{ filters.min_score if filters.min_score else '' }}" style="width:110px">
-  <label><input type="checkbox" name="high_priority" value="true" {{ 'checked' if filters.high_priority }}> High priority only</label>
-  <button class="btn" type="submit">Filter</button>
-  <a class="btn" href="/jobs">Reset</a>
-</form>
+<section class="card panel-card filter-panel">
+  <form class="filter-bar filter-bar-stack" method="get" action="/jobs" id="jobs-filter-form">
+    <input type="search" name="q" placeholder="Job title…" value="{{ filters.q }}" aria-label="Job title">
+    <input type="text" name="location" placeholder="Location…" value="{{ filters.location }}" aria-label="Location">
+    <input type="text" name="company" placeholder="Company…" value="{{ filters.company }}" aria-label="Company">
+    <input type="number" name="min_score" min="0" max="100" step="5" placeholder="Min score" value="{{ filters.min_score|int if filters.min_score else '' }}" class="filter-narrow" aria-label="Minimum score">
+    <label class="filter-check"><input type="checkbox" name="high_priority" value="true" {{ 'checked' if filters.high_priority }}> High priority</label>
+    <div class="filter-actions">
+      <button class="btn btn-accent" type="submit">Apply filters</button>
+      <a class="btn" href="/jobs">Reset</a>
+    </div>
+  </form>
+  {% if has_filters %}
+  <div class="active-filters">
+    {% if filters.q %}<span class="filter-chip">Title: {{ filters.q }}</span>{% endif %}
+    {% if filters.location %}<span class="filter-chip">Location: {{ filters.location }}</span>{% endif %}
+    {% if filters.company %}<span class="filter-chip">Company: {{ filters.company }}</span>{% endif %}
+    {% if filters.min_score > 0 %}<span class="filter-chip">Score ≥ {{ filters.min_score|int }}</span>{% endif %}
+    {% if filters.high_priority %}<span class="filter-chip">High priority</span>{% endif %}
+  </div>
+  {% endif %}
+</section>
 
-<div class="card table-wrap">
-  <table class="list">
-    <tr><th>Score</th><th>Role</th><th>Company</th><th>Location</th><th>Source</th><th>Age</th></tr>
-    {% for job in jobs %}
-    <tr>
-      <td><span class="score {{ 'hi' if job.match_score >= 70 else 'mid' if job.match_score >= 45 else 'lo' }}">{{ job.match_score|round|int }}</span></td>
-      <td>
-        <a href="/jobs/{{ job.id }}">{{ job.title }}</a>
+{% if jobs %}
+<div class="job-cards job-cards-page">
+  {% for job in jobs %}
+  <a class="job-card" href="/jobs/{{ job.id }}">
+    <div class="job-card-score score {{ 'hi' if job.match_score >= 70 else 'mid' if job.match_score >= 45 else 'lo' }}">
+      {{ job.match_score|round|int }}
+    </div>
+    <div class="job-card-body">
+      <div class="job-card-title">{{ job.title }}</div>
+      <div class="job-card-meta">
+        {{ job.company.name if job.company else '—' }}
+        {% if job.location %} · {{ job.location }}{% endif %}
+      </div>
+      <div class="job-card-tags">
         {% if job.is_high_priority %}<span class="badge hp">high priority</span>{% endif %}
         {% if not job.is_active %}<span class="badge closed">tracked · closed</span>{% endif %}
-      </td>
-      <td>{{ job.company.name if job.company }}</td>
-      <td>{{ job.location or '—' }}</td>
-      <td class="muted small">{{ job.source }}</td>
-      <td class="muted small" title="{% if job.posted_at %}Posted {{ job.posted_at.strftime('%d %b %Y') }}{% else %}Found {{ job.discovered_at.strftime('%d %b %Y') if job.discovered_at }}{% endif %}">{{ job|job_age_label or '—' }}</td>
-    </tr>
-    {% else %}
-    <tr><td colspan="6" class="muted">No jobs found. Add companies on the <a href="/companies">Companies</a> page, then press “Run discovery”.</td></tr>
-    {% endfor %}
-  </table>
+        <span class="badge source-badge">{{ job.source }}</span>
+        {% if job|job_age_label %}<span class="badge age-badge">{{ job|job_age_label }}</span>{% endif %}
+      </div>
+    </div>
+    <span class="job-card-arrow" aria-hidden="true">›</span>
+  </a>
+  {% endfor %}
 </div>
+{% else %}
+<div class="card dash-empty">
+  <p>No jobs match your filters.</p>
+  <p class="small muted">Try broadening filters or add companies on the <a href="/companies">Companies</a> page.</p>
+</div>
+{% endif %}
 
 {% if pages > 1 %}
-<div class="pagination">
-  {% if page > 1 %}<a class="btn" href="/jobs?q={{ filters.q }}&location={{ filters.location }}&company={{ filters.company }}&min_score={{ filters.min_score }}&page={{ page - 1 }}">← Prev</a>{% endif %}
-  <span class="btn" style="cursor:default">{{ page }} / {{ pages }}</span>
-  {% if page < pages %}<a class="btn" href="/jobs?q={{ filters.q }}&location={{ filters.location }}&company={{ filters.company }}&min_score={{ filters.min_score }}&page={{ page + 1 }}">Next →</a>{% endif %}
-</div>
+<nav class="pagination" aria-label="Jobs pages">
+  {% if page > 1 %}<a class="btn" href="/jobs?{{ filters|jobs_query(page - 1) }}">← Prev</a>{% endif %}
+  <span class="page-indicator">{{ page }} / {{ pages }}</span>
+  {% if page < pages %}<a class="btn" href="/jobs?{{ filters|jobs_query(page + 1) }}">Next →</a>{% endif %}
+</nav>
 {% endif %}
 {% endblock %}
 
@@ -66,13 +97,18 @@ async function importLinkedIn(event) {
     const res = await fetch('/jobs/import-linkedin', {method: 'POST', body});
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Import failed');
-    alert(data.status === 'created'
-      ? `Imported: ${data.title} @ ${data.company} (score ${data.match_score})`
-      : `Already tracked: ${data.title}`);
+    if (typeof showToast === 'function') {
+      showToast(
+        data.status === 'created'
+          ? `Imported: ${data.title} @ ${data.company} (score ${data.match_score})`
+          : `Already tracked: ${data.title}`,
+        'info', 6000
+      );
+    }
     location.href = '/jobs/' + data.job_id;
   } catch (err) {
-    alert('LinkedIn import failed: ' + err.message);
-    btn.disabled = false; btn.textContent = 'Import job';
+    if (typeof showToast === 'function') showToast('Import failed: ' + err.message, 'err', 7000);
+    btn.disabled = false; btn.textContent = 'Import';
   }
   return false;
 }
