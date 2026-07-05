@@ -13,6 +13,9 @@
 #                tenant -> e.g. pwc
 #                site   -> the career site name, e.g. Global_Experienced_Careers
 #                search_text (optional) -> server-side keyword filter
+#   smartrecruiters : public SmartRecruiters postings API (no auth)
+#                board  -> the token in api.smartrecruiters.com/v1/companies/<token>
+#                search_text (optional) -> server-side keyword filter
 #   careers_page : generic public careers page, parsed with BeautifulSoup and,
 #                if 'render: true', rendered first with Playwright (for
 #                JavaScript-heavy pages).
@@ -35,6 +38,12 @@ sources:
   - type: lever
     company: Netflix
     board: netflix
+    enabled: false
+
+  - type: smartrecruiters
+    company: Roland Berger
+    board: rolandberger
+    search_text: consultant
     enabled: false
 
   - type: workday
