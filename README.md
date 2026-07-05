@@ -155,11 +155,18 @@ deployments also consider HTTPS via a reverse proxy or Cloudflare Tunnel.
 Merging a PR updates GitHub only — the VM does **not** auto-update unless you
 wire up deploy.
 
-**First time (required once)** — open Oracle Cloud Console → your instance →
-**Console connection** (browser SSH), paste:
+**First time (required once)** — the repo must be **public** (or git auth configured on
+the VM). Full guide: [docs/OCI-DEPLOY.md](docs/OCI-DEPLOY.md)
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/Shreyash7798/CareerCopilotAI/main/scripts/bootstrap-oci.sh | bash
+**On your phone:** GitHub → CareerCopilotAI → Settings → Change visibility → **Public**
+
+**In Oracle Console SSH** (type one line at a time — no paste needed):
+
+```
+cd ~/CareerCopilotAI
+git fetch origin main
+git reset --hard origin/main
+bash scripts/bootstrap-oci.sh
 ```
 
 This pulls the latest code, restarts the app, sets up cron auto-pull, and prints

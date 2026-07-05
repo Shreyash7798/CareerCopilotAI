@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
-# Run once in Oracle Cloud Console → Instance → Console connection (browser SSH):
-#   curl -fsSL https://raw.githubusercontent.com/Shreyash7798/CareerCopilotAI/main/scripts/bootstrap-oci.sh | bash
+# Run once in Oracle Cloud Console → Instance → Console connection (browser SSH).
+#
+# The repo must be PUBLIC for curl-from-GitHub, OR run from an existing clone:
+#   cd ~/CareerCopilotAI && git fetch origin main && git reset --hard origin/main
+#   bash scripts/bootstrap-oci.sh
+#
+# See docs/OCI-DEPLOY.md for step-by-step instructions (phone + type-only commands).
 set -euo pipefail
 
 APP_DIR="${CAREERCOPILOT_DIR:-$HOME/CareerCopilotAI}"

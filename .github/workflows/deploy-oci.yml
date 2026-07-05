@@ -32,7 +32,7 @@ jobs:
         run: |
           set -euo pipefail
           APP_DIR="/home/ubuntu/CareerCopilotAI"
-          BOOTSTRAP="curl -fsSL https://raw.githubusercontent.com/Shreyash7798/CareerCopilotAI/main/scripts/bootstrap-oci.sh | bash"
+          BOOTSTRAP="cd ~/CareerCopilotAI && git fetch origin main && git reset --hard origin/main && bash scripts/bootstrap-oci.sh"
 
           if [ -n "${OCI_HOST}" ] && [ -n "${OCI_USER}" ] && [ -n "${OCI_SSH_KEY}" ]; then
             echo "Deploying via SSH to ${OCI_USER}@${OCI_HOST}"
