@@ -59,8 +59,12 @@ jobs:
             exit 0
           fi
 
-          echo "::warning::No OCI deploy credentials configured."
-          echo "::warning::Run this ONCE in Oracle Cloud Console SSH:"
-          echo "::warning::  ${BOOTSTRAP}"
-          echo "::warning::Then add the printed secrets to GitHub Actions."
-          exit 1
+          echo "::notice::Deploy skipped — no GitHub deploy secrets configured."
+          echo "::notice::The VM still auto-updates via cron (every 5 min) if bootstrap ran."
+          echo "::notice::To enable this workflow, on the VM run:"
+          echo "::notice::  bash ~/CareerCopilotAI/scripts/print-github-secrets.sh"
+          echo "::notice::Then add OCI_HOST, OCI_USER, OCI_SSH_KEY to repo Secrets → Actions."
+          echo "::notice::Or use HTTP hook: DEPLOY_HOOK_URL + DEPLOY_TOKEN (see docs/OCI-DEPLOY.md)."
+          echo "::notice::First-time bootstrap (Oracle Console SSH):"
+          echo "::notice::  ${BOOTSTRAP}"
+          exit 0
