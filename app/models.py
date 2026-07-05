@@ -28,6 +28,7 @@ def utcnow() -> datetime:
 # 'taleo' are handled through the generic careers-page connector with
 # platform-appropriate defaults (see app/company_sources.py).
 ATS_TYPES = [
+    "accenture",
     "greenhouse",
     "lever",
     "workday",

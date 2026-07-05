@@ -33,6 +33,21 @@ def test_entry_workday():
     assert entry["host"] == "x.wd1.myworkdayjobs.com"
 
 
+def test_entry_accenture_defaults():
+    c = _company(
+        ats_type="accenture",
+        country="India",
+        ats_config='{"search_text": "consulting", "country_site": "in-en"}',
+    )
+    entry = entry_from_company(c)
+    assert entry["type"] == "accenture"
+    assert entry["country_site"] == "in-en"
+    assert entry["job_language"] == "en"
+    assert entry["sort_by"] == "0"
+    assert entry["search_text"] == "consulting"
+    assert entry["country"] == "India"
+
+
 def test_entry_sap_maps_to_careers_page_with_defaults():
     c = _company(ats_type="sap", career_url="https://careers.example.com/search/?q=x")
     entry = entry_from_company(c)

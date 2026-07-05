@@ -32,6 +32,14 @@ sectors:
         ats_type: sap
         country: India
         career_url: "https://careers.capgemini.com/search/?q=consultant&locationsearch=india"
+      - name: Accenture India
+        ats_type: accenture
+        country: India
+        ats_config:
+          country_site: in-en
+          job_language: en
+          job_country: India
+          search_text: consulting
       - name: BCG
         ats_type: careers_page
         country: Global

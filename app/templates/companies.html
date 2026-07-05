@@ -19,7 +19,7 @@
   <label class="f">Workday host <input name="host" value="{{ cfg.host if cfg and cfg.host else '' }}" placeholder="x.wd1.myworkdayjobs.com"></label>
   <label class="f">Workday tenant <input name="tenant" value="{{ cfg.tenant if cfg and cfg.tenant else '' }}"></label>
   <label class="f">Workday site <input name="site" value="{{ cfg.site if cfg and cfg.site else '' }}"></label>
-  <label class="f">Search text <input name="search_text" value="{{ cfg.search_text if cfg and cfg.search_text else '' }}" placeholder="server-side keyword filter"></label>
+  <label class="f">Search text <input name="search_text" value="{{ cfg.search_text if cfg and cfg.search_text else '' }}" placeholder="keyword filter (accenture/workday/smartrecruiters)"></label>
   <label class="f">Link selector <input name="link_selector" value="{{ cfg.link_selector if cfg and cfg.link_selector else '' }}" placeholder="CSS selector for job links"></label>
   <label class="f">Keywords <input name="keywords" value="{{ c.keywords or '' if c else '' }}" placeholder="comma-separated title filter"></label>
   <label class="f">Refresh interval (min) <input name="refresh_interval_minutes" type="number" min="15" value="{{ c.refresh_interval_minutes or '' if c else '' }}" placeholder="blank = every run"></label>
@@ -47,7 +47,12 @@
   <p class="small muted">Pre-verified companies by sector. One click to start monitoring; entries flagged as bot-protected are added disabled so you can try Test Connection first.</p>
   {% for sec in catalog %}
   <details class="rowform">
-    <summary><strong>{{ sec.name }}</strong> <span class="muted small">({{ sec.companies | length }} companies)</span></summary>
+    <summary><strong>{{ sec.name }}</strong> <span class="muted small">({{ sec.companies | length }} companies)</span>
+      <form class="inline-form" method="post" action="/companies/catalog/add-sector" style="display:inline;margin-left:8px" onsubmit="return confirm('Add all companies in {{ sec.name }} that are not already monitored?')">
+        <input type="hidden" name="sector" value="{{ sec.name }}">
+        <button class="btn btn-sm" type="submit">Add all</button>
+      </form>
+    </summary>
     <div class="table-wrap mt">
       <table class="list">
         {% for item in sec.companies %}

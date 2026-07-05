@@ -22,6 +22,7 @@ from app.models import Company
 
 # ats_type -> (connector type, default ats_config)
 ATS_DEFAULTS: dict[str, tuple[str, dict]] = {
+    "accenture": ("accenture", {"country_site": "in-en", "job_language": "en", "sort_by": "0"}),
     "greenhouse": ("greenhouse", {}),
     "lever": ("lever", {}),
     "workday": ("workday", {}),
@@ -54,6 +55,8 @@ def entry_from_company(company: Company) -> dict | None:
     entry["enabled"] = bool(company.enabled)
     if company.career_url and "url" not in entry:
         entry["url"] = company.career_url
+    if company.country:
+        entry["country"] = company.country
     return entry
 
 
@@ -95,6 +98,12 @@ _ATS_CONFIG_KEYS = (
     "render",
     "detail_limit",
     "default_location",
+    "country_site",
+    "job_language",
+    "job_country",
+    "job_keyword",
+    "sort_by",
+    "max_result_size",
 )
 
 
