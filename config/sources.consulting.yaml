@@ -1,0 +1,204 @@
+# Curated consulting + industry (process excellence) source pack.
+#
+# Usage:  cp config/sources.consulting.yaml config/sources.yaml
+#
+# Every ENABLED entry below was verified working against the live endpoint
+# (API returns jobs / page returns job links) on 05 Jul 2026. Entries marked
+# enabled: false are companies whose career sites are bot-protected or use a
+# custom stack; notes explain the status so you can revisit them.
+#
+# Note on entries of type careers_page: they capture title + link only (no
+# JD text or location), so their match scores are less precise — open the
+# posting to judge. API-based entries (workday/smartrecruiters/greenhouse/
+# lever) capture full descriptions and score accurately.
+
+sources:
+  # ------------------------------------------------------------------ Big 4
+  - type: workday
+    company: PwC
+    host: pwc.wd3.myworkdayjobs.com
+    tenant: pwc
+    site: Global_Experienced_Careers
+    search_text: consulting
+    enabled: true
+
+  - type: careers_page
+    company: Deloitte India
+    # Deloitte South Asia careers (SuccessFactors). Tweak q= for other tracks.
+    url: "https://southasiacareers.deloitte.com/search/?q=consulting"
+    link_selector: "a.jobTitle-link"
+    render: false
+    enabled: true
+
+  - type: careers_page
+    company: EY India
+    url: "https://careers.ey.com/ey/search/?q=consulting&locationsearch=India"
+    link_selector: "a.jobTitle-link"
+    render: false
+    enabled: true
+
+  - type: careers_page
+    company: KPMG India
+    # KPMG India runs a custom careers stack (no public JSON API found and
+    # the India job list is not on Workday). Watch their page or add the
+    # right URL + selector here once located.
+    url: "https://kpmg.com/in/en/careers.html"
+    link_selector: "a"
+    render: true
+    enabled: false
+
+  # ------------------------------------------------------------ MBB & tier-1
+  - type: careers_page
+    company: BCG
+    # Phenom-powered site; needs Playwright rendering.
+    url: "https://careers.bcg.com/global/en/search-results?keywords=consultant"
+    link_selector: "a[href*='/job/']"
+    render: true
+    enabled: true
+
+  - type: careers_page
+    company: McKinsey
+    # Blocked for datacenter IPs (Cloudflare); typically works from a home
+    # connection with render: true. Enable and test from your machine.
+    url: "https://www.mckinsey.com/careers/search-jobs?query=consultant"
+    link_selector: "a[href*='/careers/search-jobs/jobs/']"
+    render: true
+    enabled: false
+
+  - type: careers_page
+    company: Bain & Company
+    # Akamai bot protection; page times out from datacenter IPs. Try from
+    # your machine with render: true.
+    url: "https://www.bain.com/careers/find-a-role/?searchterm=consultant"
+    link_selector: "a[href*='jobid=']"
+    render: true
+    enabled: false
+
+  - type: workday
+    company: Oliver Wyman (Marsh McLennan)
+    # Oliver Wyman posts on the Marsh McLennan Workday site; the search text
+    # keeps only OW roles (India roles included).
+    host: mmc.wd1.myworkdayjobs.com
+    tenant: mmc
+    site: Careers
+    search_text: Oliver Wyman
+    enabled: true
+
+  - type: careers_page
+    company: Kearney
+    # Taleo site behind bot protection from datacenter IPs; try from your
+    # machine, or apply via their portal directly.
+    url: "https://www.kearney.com/careers"
+    link_selector: "a[href*='job']"
+    render: true
+    enabled: false
+
+  - type: smartrecruiters
+    company: Roland Berger
+    board: rolandberger
+    search_text: consultant
+    enabled: true
+
+  # ------------------------------------------------- consulting / advisory
+  - type: careers_page
+    company: Accenture India
+    # Site renders fine but job titles are not inside the link elements, so
+    # the generic extractor cannot capture useful titles yet. Left disabled
+    # until a dedicated Accenture source is added.
+    url: "https://www.accenture.com/in-en/careers/jobsearch?jk=consulting&sb=1"
+    link_selector: "a[href*='/careers/jobdetails']"
+    render: true
+    enabled: false
+
+  - type: careers_page
+    company: Capgemini (incl. Invent)
+    # One SuccessFactors board covers Capgemini and Capgemini Invent brands.
+    url: "https://careers.capgemini.com/search/?q=consultant&locationsearch=india"
+    link_selector: "a.jobTitle-link"
+    render: false
+    enabled: true
+
+  - type: careers_page
+    company: Alvarez & Marsal
+    # 403 bot protection from datacenter IPs; try from your machine.
+    url: "https://www.alvarezandmarsal.com/careers"
+    link_selector: "a[href*='/careers/']"
+    render: true
+    enabled: false
+
+  - type: workday
+    company: Protiviti
+    host: roberthalf.wd1.myworkdayjobs.com
+    tenant: roberthalf
+    site: ProtivitiIndia
+    search_text: ""
+    enabled: true
+
+  - type: workday
+    company: Protiviti (APAC)
+    host: roberthalf.wd1.myworkdayjobs.com
+    tenant: roberthalf
+    site: ProtivitiAPAC
+    search_text: ""
+    enabled: true
+
+  - type: careers_page
+    company: Grant Thornton Bharat
+    # GT Bharat (India) careers are on a custom portal; the UK/US firms use
+    # separate Workday tenants. Add the India URL + selector once located.
+    url: "https://www.grantthornton.in/en/careers/"
+    link_selector: "a"
+    render: true
+    enabled: false
+
+  - type: greenhouse
+    company: BearingPoint
+    # Public Greenhouse board (mostly EU roles; India presence is limited).
+    board: bearingpoint
+    enabled: true
+
+  # ------------------------------------------- industry: process excellence
+  - type: careers_page
+    company: Cummins
+    # Radancy-powered hub; needs rendering. Duplicate this entry with other
+    # q= terms (quality, supply chain, operations) to widen coverage.
+    url: "https://hub.cummins.jobs/jobs/?q=process%20excellence"
+    link_selector: "a[href*='/job/']"
+    render: true
+    enabled: true
+
+  - type: careers_page
+    company: Cummins
+    url: "https://hub.cummins.jobs/jobs/?q=operational%20excellence"
+    link_selector: "a[href*='/job/']"
+    render: true
+    enabled: true
+
+  # More industry MNCs with verified public ATS boards can be added the same
+  # way. Quick checks:
+  #   Greenhouse:      curl https://boards-api.greenhouse.io/v1/boards/<token>/jobs
+  #   Lever:           curl https://api.lever.co/v0/postings/<token>?mode=json
+  #   SmartRecruiters: curl https://api.smartrecruiters.com/v1/companies/<token>/postings
+  #   Workday:         POST https://<host>/wday/cxs/<tenant>/<site>/jobs
+
+# Keep only roles whose title matches at least one term below. This covers
+# consulting titles plus industry process-excellence titles (Cummins etc.).
+filters:
+  title_must_contain_any:
+    - consultant
+    - consulting
+    - strategy
+    - transformation
+    - operations
+    - supply chain
+    - advisory
+    - process excellence
+    - operational excellence
+    - business excellence
+    - continuous improvement
+    - process improvement
+    - lean
+    - six sigma
+    - quality
+    - pmo
+  location_must_contain_any: []

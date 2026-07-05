@@ -34,7 +34,11 @@ def _fetch_html_playwright(url: str) -> str:
         browser = p.chromium.launch(headless=True)
         try:
             page = browser.new_page()
-            page.goto(url, wait_until="networkidle", timeout=60000)
+            # 'domcontentloaded' + a fixed settle wait is more reliable than
+            # 'networkidle': heavy career sites (analytics, chat widgets)
+            # often never go network-idle and would time out.
+            page.goto(url, wait_until="domcontentloaded", timeout=45000)
+            page.wait_for_timeout(6000)
             return page.content()
         finally:
             browser.close()
