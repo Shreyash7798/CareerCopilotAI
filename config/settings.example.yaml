@@ -17,8 +17,11 @@ scheduler:
   enabled: true
   # How often the discovery pipeline runs (minutes).
   discovery_interval_minutes: 180
-  # Time of day (24h, local server time) for the daily summary notification.
+  # Time of day (24h) for the daily summary notification.
   daily_summary_time: "08:30"
+  # IANA timezone for the daily summary (cloud servers usually run UTC).
+  # Example: Asia/Kolkata. Leave empty to use the server's local time.
+  timezone: ""
 
 profile:
   # This block is auto-populated when you upload a CV, but you can edit it
@@ -98,6 +101,11 @@ scoring:
     - vice president
 
 notifications:
+  # Send a short check-in message after every scheduled discovery run, even
+  # when nothing new was found (heartbeat so you know the system is alive).
+  run_summary: true
+  # Also send the check-in by email (Telegram only by default).
+  run_summary_email: false
   telegram:
     enabled: false
     # Create a bot with @BotFather, then set the token and your chat id.

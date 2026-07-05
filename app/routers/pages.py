@@ -13,11 +13,20 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app import company_sources
 from app.analytics import compute_analytics
-from app.config import get_profile, get_settings, get_sources_config, save_settings
+from app.config import (
+    get_company_catalog,
+    get_profile,
+    get_settings,
+    get_sources_config,
+    save_settings,
+)
 from app.db import get_db, session_scope
 from app.models import (
     APPLICATION_STATUSES,
+    ATS_TYPES,
+    COMPANY_PRIORITIES,
     ActivityLog,
     Application,
     Company,
@@ -25,6 +34,7 @@ from app.models import (
     Recruiter,
     Resume,
     UserProfile,
+    log_activity,
 )
 
 router = APIRouter(include_in_schema=False)
@@ -45,6 +55,10 @@ def _parse_date(value: str | None) -> datetime | None:
 @router.get("/", response_class=HTMLResponse)
 def dashboard(request: Request, db: Session = Depends(get_db)):
     analytics = compute_analytics(db)
+    monitored_count = db.execute(
+        select(func.count(Company.id)).where(Company.ats_type.isnot(None))
+    ).scalar() or 0
+    has_cv = db.execute(select(UserProfile)).scalars().first() is not None
     recent_high = (
         db.execute(
             select(Job)
@@ -80,6 +94,8 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
             "recent_high": recent_high,
             "recent_logs": recent_logs,
             "follow_ups": follow_ups,
+            "monitored_count": monitored_count,
+            "has_cv": has_cv,
         },
     )
 
@@ -286,12 +302,221 @@ def companies_page(request: Request, db: Session = Depends(get_db)):
             )
             if active_jobs
             else 0,
+            "ats_config": company_sources.parse_ats_config(company),
         }
+    catalog = get_company_catalog()
+    existing_names = {c.name.lower() for c in companies if c.ats_type}
     return templates.TemplateResponse(
         request,
         "companies.html",
-        {"active": "companies", "companies": companies, "stats": stats},
+        {
+            "active": "companies",
+            "companies": companies,
+            "stats": stats,
+            "catalog": catalog.get("sectors", []),
+            "existing_names": existing_names,
+            "ats_types": ATS_TYPES,
+            "priorities": COMPANY_PRIORITIES,
+        },
     )
+
+
+def _apply_company_form(
+    company: Company,
+    *,
+    name: str,
+    sector: str,
+    country: str,
+    ats_type: str,
+    career_url: str,
+    board: str,
+    host: str,
+    tenant: str,
+    site: str,
+    search_text: str,
+    link_selector: str,
+    render: bool,
+    keywords: str,
+    refresh_interval_minutes: str,
+    priority: str,
+    enabled: bool,
+    recruiter_search_enabled: bool,
+    notes: str,
+) -> None:
+    company.name = name.strip()
+    company.sector = sector.strip() or None
+    company.country = country.strip() or None
+    company.ats_type = ats_type if ats_type in ATS_TYPES else None
+    company.career_url = career_url.strip() or None
+    ats_config = {
+        k: v
+        for k, v in {
+            "board": board.strip(),
+            "host": host.strip(),
+            "tenant": tenant.strip(),
+            "site": site.strip(),
+            "search_text": search_text.strip(),
+            "link_selector": link_selector.strip(),
+        }.items()
+        if v
+    }
+    if render:
+        ats_config["render"] = True
+    company.ats_config = json.dumps(ats_config) if ats_config else None
+    company.keywords = keywords.strip() or None
+    company.refresh_interval_minutes = (
+        int(refresh_interval_minutes) if refresh_interval_minutes.strip().isdigit() else None
+    )
+    company.priority = priority if priority in COMPANY_PRIORITIES else "normal"
+    company.enabled = enabled
+    company.recruiter_search_enabled = recruiter_search_enabled
+    company.notes = notes.strip() or None
+
+
+@router.post("/companies/new")
+def company_create(
+    name: str = Form(...),
+    sector: str = Form(""),
+    country: str = Form(""),
+    ats_type: str = Form(""),
+    career_url: str = Form(""),
+    board: str = Form(""),
+    host: str = Form(""),
+    tenant: str = Form(""),
+    site: str = Form(""),
+    search_text: str = Form(""),
+    link_selector: str = Form(""),
+    render: bool = Form(False),
+    keywords: str = Form(""),
+    refresh_interval_minutes: str = Form(""),
+    priority: str = Form("normal"),
+    enabled: bool = Form(False),
+    recruiter_search_enabled: bool = Form(False),
+    notes: str = Form(""),
+):
+    with session_scope() as session:
+        company = session.execute(
+            select(Company).where(Company.name == name.strip())
+        ).scalar_one_or_none()
+        if company is None:
+            company = Company(name=name.strip())
+            session.add(company)
+        _apply_company_form(
+            company,
+            name=name, sector=sector, country=country, ats_type=ats_type,
+            career_url=career_url, board=board, host=host, tenant=tenant,
+            site=site, search_text=search_text, link_selector=link_selector,
+            render=render, keywords=keywords,
+            refresh_interval_minutes=refresh_interval_minutes,
+            priority=priority, enabled=enabled,
+            recruiter_search_enabled=recruiter_search_enabled, notes=notes,
+        )
+        log_activity(session, "config", f"Company added/updated: {name}")
+    return RedirectResponse("/companies", status_code=303)
+
+
+@router.post("/companies/{company_id}/update")
+def company_update(
+    company_id: int,
+    name: str = Form(...),
+    sector: str = Form(""),
+    country: str = Form(""),
+    ats_type: str = Form(""),
+    career_url: str = Form(""),
+    board: str = Form(""),
+    host: str = Form(""),
+    tenant: str = Form(""),
+    site: str = Form(""),
+    search_text: str = Form(""),
+    link_selector: str = Form(""),
+    render: bool = Form(False),
+    keywords: str = Form(""),
+    refresh_interval_minutes: str = Form(""),
+    priority: str = Form("normal"),
+    enabled: bool = Form(False),
+    recruiter_search_enabled: bool = Form(False),
+    notes: str = Form(""),
+):
+    with session_scope() as session:
+        company = session.get(Company, company_id)
+        if company is not None:
+            _apply_company_form(
+                company,
+                name=name, sector=sector, country=country, ats_type=ats_type,
+                career_url=career_url, board=board, host=host, tenant=tenant,
+                site=site, search_text=search_text, link_selector=link_selector,
+                render=render, keywords=keywords,
+                refresh_interval_minutes=refresh_interval_minutes,
+                priority=priority, enabled=enabled,
+                recruiter_search_enabled=recruiter_search_enabled, notes=notes,
+            )
+            log_activity(session, "config", f"Company updated: {company.name}")
+    return RedirectResponse("/companies", status_code=303)
+
+
+@router.post("/companies/{company_id}/toggle")
+def company_toggle(company_id: int):
+    with session_scope() as session:
+        company = session.get(Company, company_id)
+        if company is not None:
+            company.enabled = not company.enabled
+            log_activity(
+                session,
+                "config",
+                f"Company {'enabled' if company.enabled else 'disabled'}: {company.name}",
+            )
+    return RedirectResponse("/companies", status_code=303)
+
+
+@router.post("/companies/{company_id}/delete")
+def company_delete(company_id: int):
+    with session_scope() as session:
+        company = session.get(Company, company_id)
+        if company is not None:
+            if company.jobs or company.recruiters:
+                # Keep the employer-intelligence record; just stop monitoring.
+                company.ats_type = None
+                company.enabled = False
+                log_activity(session, "config", f"Company unmonitored: {company.name}")
+            else:
+                session.delete(company)
+                log_activity(session, "config", f"Company deleted: {company.name}")
+    return RedirectResponse("/companies", status_code=303)
+
+
+@router.post("/companies/catalog/add")
+def company_catalog_add(sector: str = Form(...), name: str = Form(...)):
+    catalog = get_company_catalog()
+    entry = None
+    for sec in catalog.get("sectors", []):
+        if sec.get("name") != sector:
+            continue
+        for item in sec.get("companies", []):
+            if item.get("name") == name:
+                entry = dict(item)
+                entry["sector"] = sector
+                break
+    if entry is not None:
+        with session_scope() as session:
+            company = session.execute(
+                select(Company).where(Company.name == entry["name"])
+            ).scalar_one_or_none()
+            if company is None:
+                company = Company(name=entry["name"])
+                session.add(company)
+            company.sector = entry.get("sector")
+            company.country = entry.get("country")
+            company.ats_type = entry.get("ats_type")
+            company.career_url = entry.get("career_url")
+            company.ats_config = (
+                json.dumps(entry["ats_config"]) if entry.get("ats_config") else None
+            )
+            # Entries with caveats (bot-protected sites) start disabled so the
+            # user can validate them with Test Connection first.
+            company.enabled = not entry.get("caveat")
+            company.notes = entry.get("caveat") or company.notes
+            log_activity(session, "config", f"Company added from catalog: {entry['name']}")
+    return RedirectResponse("/companies", status_code=303)
 
 
 @router.get("/recruiters", response_class=HTMLResponse)

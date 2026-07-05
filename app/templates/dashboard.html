@@ -3,6 +3,17 @@
 {% block content %}
 <h1>Dashboard</h1>
 
+{% if not has_cv or monitored_count == 0 %}
+<div class="card">
+  <h2>Get started</h2>
+  <ol class="small">
+    <li>{% if has_cv %}<s>Upload your CV</s> ✓{% else %}<a href="/profile">Upload your CV</a> — your profile and skills are extracted automatically.{% endif %}</li>
+    <li>{% if monitored_count %}<s>Pick companies to monitor</s> ✓ ({{ monitored_count }} monitored){% else %}<a href="/companies">Pick companies to monitor</a> — choose from the sector catalog or add any company's careers site.{% endif %}</li>
+    <li>Press <strong>Run discovery</strong> (top right). After that, the scheduler keeps checking automatically.</li>
+  </ol>
+</div>
+{% endif %}
+
 <div class="grid cols-4">
   <div class="card stat"><div class="num">{{ analytics.total_jobs }}</div><div class="label">Jobs discovered</div></div>
   <div class="card stat"><div class="num">{{ analytics.high_priority_jobs }}</div><div class="label">High priority</div></div>

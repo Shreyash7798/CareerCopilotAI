@@ -12,10 +12,16 @@ your accounts.
 
 ## What it does
 
-- **Job discovery** from Greenhouse boards, Lever boards, Workday career
-  sites (all via their public JSON APIs — no scraping fights) and generic
-  careers pages (BeautifulSoup, with optional Playwright rendering for
-  JavaScript-heavy pages).
+- **Company management from the dashboard**: pick companies from a
+  pre-verified, sector-grouped catalog (consulting, manufacturing,
+  technology…) or add any company by its ATS details — Greenhouse, Lever,
+  Workday, SmartRecruiters, SAP SuccessFactors, Oracle, Taleo or a generic
+  careers page. Enable/disable, per-company keywords, refresh interval and a
+  Test Connection button. No config files, no server access needed.
+- **Job discovery** from Greenhouse boards, Lever boards, SmartRecruiters,
+  Workday career sites (all via their public JSON APIs — no scraping fights)
+  and generic careers pages (BeautifulSoup, with optional Playwright
+  rendering for JavaScript-heavy pages).
 - **Duplicate removal** with a deterministic company+title+location key plus
   a fuzzy pass for near-identical titles.
 - **Explainable match scoring** (0–100) across six weighted components:
@@ -52,15 +58,22 @@ pip install -r requirements.txt
 # optional, only needed for JavaScript-rendered careers pages:
 playwright install chromium
 
-# personalize (both files have commented examples):
+# personalize (optional — profile/notifications; companies are managed in the UI):
 cp config/settings.example.yaml config/settings.yaml
-cp config/sources.example.yaml config/sources.yaml
 
 python run.py
 ```
 
-Open http://localhost:8000, go to **Profile** and upload your CV (use DOCX to
-enable resume tailoring), review **Settings**, then press **Run discovery**.
+Open http://localhost:8000 and follow the Get Started card:
+
+1. **Profile** → upload your CV (use DOCX to enable resume tailoring).
+2. **Companies** → add companies from the sector catalog (one click each) or
+   add any employer manually; use **Test Connection** to validate.
+3. Press **Run discovery**. The scheduler keeps checking automatically after
+   that, and a short Telegram/email check-in is sent after each scheduled run.
+
+A legacy `config/sources.yaml` (from older installs) is imported into the
+Companies table automatically on the first discovery run.
 
 Command-line modes (useful for cron instead of the built-in scheduler):
 
@@ -71,21 +84,23 @@ python run.py --summary   # send the daily summary now, then exit
 
 ## Configuration
 
-Everything lives in two YAML files — no user data is hardcoded:
-
+- **Companies to monitor** — managed entirely from the dashboard (Companies
+  page), stored in the database. The curated catalog lives in
+  `config/company_catalog.yaml` (ships with the app, extensible via PRs).
 - `config/settings.yaml` — profile (locations, domains, skills, preferred
-  companies), scoring weights and high-priority threshold, scheduler
-  interval, Telegram/email credentials, export paths.
-- `config/sources.yaml` — the list of job sources and title/location
-  filters. Adding a Greenhouse or Lever company is one 4-line entry.
-
-Both are gitignored; the `*.example.yaml` files document every option.
+  companies), scoring weights and high-priority threshold, scheduler interval
+  and timezone, Telegram/email credentials, export paths. Gitignored; the
+  example file documents every option.
 
 ### Notifications
 
 - **Telegram** (free): create a bot with [@BotFather](https://t.me/BotFather),
   put the token and your chat id in `settings.yaml`, set `enabled: true`.
 - **Email**: any SMTP account works; for Gmail create an app password.
+- Use **Settings → Send test notification** to verify a channel instantly.
+- After every scheduled discovery run a short check-in is sent (disable with
+  `notifications.run_summary: false`). Set `scheduler.timezone` (e.g.
+  `Asia/Kolkata`) so the daily summary arrives at your local time.
 
 ## Accessing from iPhone/iPad and other devices
 

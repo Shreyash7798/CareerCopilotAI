@@ -1,9 +1,11 @@
-"""End-to-end pipeline test with a fake source and a temporary database."""
+"""End-to-end pipeline test with a fake connector and a temporary database,
+using database-backed company configuration (Company Management MVP)."""
 
 import pytest
 
 import app.db as db_mod
 import app.pipeline as pipeline_mod
+from app.models import Company
 from app.sources.base import RawJob
 
 
@@ -36,7 +38,7 @@ FAKE_JOBS = [
     ),
     RawJob(
         company="Acme Consulting",
-        title="Software Engineer",  # filtered out by title filter
+        title="Software Engineer",  # filtered out by company keywords
         location="Mumbai, India",
         url="https://acme.example/jobs/2",
         source="fake",
@@ -46,16 +48,10 @@ FAKE_JOBS = [
 
 
 @pytest.fixture()
-def fake_sources(monkeypatch):
-    monkeypatch.setitem(pipeline_mod.REGISTRY, "fake", lambda entry: list(FAKE_JOBS))
-    monkeypatch.setattr(
-        pipeline_mod,
-        "get_sources_config",
-        lambda refresh=False: {
-            "sources": [{"type": "fake", "company": "Acme Consulting", "enabled": True}],
-            "filters": {"title_must_contain_any": ["consultant"]},
-        },
-    )
+def fake_setup(temp_db, monkeypatch):
+    # Register a fake connector and map the 'greenhouse' ats_type to it.
+    monkeypatch.setitem(pipeline_mod.REGISTRY, "greenhouse", lambda entry: list(FAKE_JOBS))
+    monkeypatch.setattr(pipeline_mod, "sources_yaml_exists", lambda: False)
     monkeypatch.setattr(
         pipeline_mod,
         "get_settings",
@@ -77,13 +73,23 @@ def fake_sources(monkeypatch):
             },
         },
     )
+    with db_mod.session_scope() as session:
+        session.add(
+            Company(
+                name="Acme Consulting",
+                ats_type="greenhouse",
+                ats_config='{"board": "acme"}',
+                enabled=True,
+                keywords="consultant, operations",
+            )
+        )
 
 
-def test_pipeline_end_to_end(temp_db, fake_sources):
+def test_pipeline_end_to_end_db_config(fake_setup):
     result = pipeline_mod.run_pipeline(notify=False, export=False)
     assert result.sources_run == 1
     assert result.fetched == 3
-    assert result.filtered_out == 1  # software engineer
+    assert result.filtered_out == 1  # software engineer (company keywords)
     assert result.duplicates == 1  # exact duplicate
     assert result.new_jobs == 1
     assert result.high_priority == 1  # strong profile match
@@ -95,7 +101,7 @@ def test_pipeline_end_to_end(temp_db, fake_sources):
 
     from sqlalchemy import select
 
-    from app.models import ActivityLog, Company, Job
+    from app.models import ActivityLog, Job
 
     with db_mod.session_scope() as session:
         jobs = session.execute(select(Job)).scalars().all()
@@ -103,7 +109,32 @@ def test_pipeline_end_to_end(temp_db, fake_sources):
         job = jobs[0]
         assert job.match_score >= 70
         assert job.score_breakdown  # explainable
-        companies = session.execute(select(Company)).scalars().all()
-        assert [c.name for c in companies] == ["Acme Consulting"]
+        company = session.execute(select(Company)).scalars().one()
+        assert company.last_run_at is not None
+        assert "3 jobs fetched" in (company.last_run_status or "")
         logs = session.execute(select(ActivityLog)).scalars().all()
         assert any("Pipeline run" in log.message for log in logs)
+
+
+def test_disabled_company_is_skipped(fake_setup):
+    with db_mod.session_scope() as session:
+        from sqlalchemy import select
+
+        company = session.execute(select(Company)).scalars().one()
+        company.enabled = False
+    result = pipeline_mod.run_pipeline(notify=False, export=False)
+    assert result.sources_run == 0
+    assert result.new_jobs == 0
+
+
+def test_refresh_interval_skips_recent(fake_setup):
+    result = pipeline_mod.run_pipeline(notify=False, export=False)
+    assert result.sources_run == 1
+    with db_mod.session_scope() as session:
+        from sqlalchemy import select
+
+        company = session.execute(select(Company)).scalars().one()
+        company.refresh_interval_minutes = 999
+    result2 = pipeline_mod.run_pipeline(notify=False, export=False)
+    assert result2.sources_run == 0
+    assert result2.sources_skipped == 1

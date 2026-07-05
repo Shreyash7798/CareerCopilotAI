@@ -15,7 +15,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from app.config import get_settings
-from app.notifications import send_daily_summary
+from app.notifications import send_daily_summary, send_run_summary
 from app.pipeline import run_pipeline
 
 logger = logging.getLogger(__name__)
@@ -32,6 +32,10 @@ def _discovery_job() -> None:
             result.high_priority,
             result.duplicates,
         )
+        try:
+            send_run_summary(result)
+        except Exception:  # noqa: BLE001
+            logger.exception("Run summary notification failed")
     except Exception:  # noqa: BLE001
         logger.exception("Scheduled discovery run failed")
 
@@ -47,8 +51,11 @@ def start_scheduler() -> BackgroundScheduler | None:
     interval = int(cfg.get("discovery_interval_minutes", 180))
     summary_time = str(cfg.get("daily_summary_time", "08:30"))
     hour, _, minute = summary_time.partition(":")
+    # e.g. "Asia/Kolkata"; None keeps the server's local timezone (usually UTC
+    # on cloud hosts, which surprises users expecting local-time summaries).
+    timezone = cfg.get("timezone") or None
 
-    _scheduler = BackgroundScheduler()
+    _scheduler = BackgroundScheduler(**({"timezone": timezone} if timezone else {}))
     _scheduler.add_job(
         _discovery_job,
         IntervalTrigger(minutes=interval),
@@ -56,9 +63,10 @@ def start_scheduler() -> BackgroundScheduler | None:
         max_instances=1,
         coalesce=True,
     )
+    cron_kwargs = {"timezone": timezone} if timezone else {}
     _scheduler.add_job(
         send_daily_summary,
-        CronTrigger(hour=int(hour or 8), minute=int(minute or 30)),
+        CronTrigger(hour=int(hour or 8), minute=int(minute or 30), **cron_kwargs),
         id="daily_summary",
         max_instances=1,
         coalesce=True,

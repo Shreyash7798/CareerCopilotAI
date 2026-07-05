@@ -12,8 +12,8 @@ from dataclasses import dataclass, field
 
 from sqlalchemy import select
 
-from app import notifications
-from app.config import get_settings, get_sources_config
+from app import company_sources, notifications
+from app.config import get_settings, get_sources_config, sources_yaml_exists
 from app.db import session_scope
 from app.dedup import dedup_key, is_fuzzy_duplicate
 from app.exporter import export_excel
@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 class PipelineResult:
     sources_run: int = 0
     sources_failed: int = 0
+    sources_skipped: int = 0
     fetched: int = 0
     filtered_out: int = 0
     duplicates: int = 0
@@ -51,28 +52,90 @@ def _get_or_create_company(session, name: str, profile: dict) -> Company:
     return company
 
 
-def _discover_raw_jobs(result: PipelineResult) -> list[RawJob]:
-    cfg = get_sources_config(refresh=True)
+def _run_entry(entry: dict, result: PipelineResult) -> list[RawJob]:
+    """Fetch one source entry, isolating failures. Returns [] on error."""
+    source_type = entry.get("type", "")
+    fetcher = REGISTRY.get(source_type)
+    if fetcher is None:
+        result.errors.append(f"Unknown source type '{source_type}'")
+        return []
+    result.sources_run += 1
+    try:
+        fetched = fetcher(entry)
+        logger.info("Source %s/%s: %d jobs", source_type, entry.get("company"), len(fetched))
+        return fetched
+    except Exception as exc:  # noqa: BLE001 - sources must be isolated
+        result.sources_failed += 1
+        result.errors.append(f"{source_type}/{entry.get('company')}: {exc}")
+        logger.warning("Source failed: %s", exc)
+        return []
+
+
+def _discover_raw_jobs(result: PipelineResult) -> tuple[list[RawJob], dict[str, list[str]]]:
+    """Discover jobs from database-configured companies.
+
+    Companies (with ats_type set) are the primary configuration:
+        Dashboard -> Company table -> Discovery pipeline
+    A legacy sources.yaml, if present, is imported into the table once on the
+    first run after upgrading, so existing installs migrate automatically.
+
+    Returns (raw jobs, per-company keyword filters).
+    """
     raw_jobs: list[RawJob] = []
-    for entry in cfg.get("sources") or []:
-        if not entry.get("enabled", True):
-            continue
-        source_type = entry.get("type", "")
-        fetcher = REGISTRY.get(source_type)
-        if fetcher is None:
-            result.errors.append(f"Unknown source type '{source_type}'")
-            continue
-        result.sources_run += 1
-        try:
-            fetched = fetcher(entry)
+    keyword_map: dict[str, list[str]] = {}
+
+    with session_scope() as session:
+        companies = company_sources.source_companies(session)
+        if not companies and sources_yaml_exists():
+            imported = company_sources.seed_from_yaml_config(
+                session, get_sources_config(refresh=True)
+            )
+            if imported:
+                log_activity(
+                    session, "discovery", f"Imported {imported} companies from sources.yaml"
+                )
+                session.flush()
+                companies = company_sources.source_companies(session)
+
+        now = utcnow_naive()
+        for company in companies:
+            if not company.enabled:
+                continue
+            if not company_sources.is_due(company, now):
+                result.sources_skipped += 1
+                continue
+            entry = company_sources.entry_from_company(company)
+            if entry is None:
+                continue
+            kws = company_sources.keywords_list(company)
+            if kws:
+                keyword_map[company.name.lower()] = kws
+            failures_before = result.sources_failed
+            fetched = _run_entry(entry, result)
             raw_jobs.extend(fetched)
-            logger.info("Source %s/%s: %d jobs", source_type, entry.get("company"), len(fetched))
-        except Exception as exc:  # noqa: BLE001 - sources must be isolated
-            result.sources_failed += 1
-            result.errors.append(f"{source_type}/{entry.get('company')}: {exc}")
-            logger.warning("Source failed: %s", exc)
+            company.last_run_at = now
+            company.last_run_status = (
+                f"{len(fetched)} jobs fetched"
+                if result.sources_failed == failures_before
+                else (result.errors[-1][:250] if result.errors else "failed")
+            )
+
     result.fetched = len(raw_jobs)
-    return raw_jobs
+    return raw_jobs, keyword_map
+
+
+def utcnow_naive():
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _passes_company_keywords(raw: RawJob, keyword_map: dict[str, list[str]]) -> bool:
+    kws = keyword_map.get(raw.company.lower())
+    if not kws:
+        return True
+    title = raw.title.lower()
+    return any(k in title for k in kws)
 
 
 def run_pipeline(notify: bool = True, export: bool = True) -> PipelineResult:
@@ -81,10 +144,12 @@ def run_pipeline(notify: bool = True, export: bool = True) -> PipelineResult:
     profile = settings.get("profile", {}) or {}
     scoring_cfg = settings.get("scoring", {}) or {}
     threshold = float(scoring_cfg.get("high_priority_threshold", 70))
-    filters = (get_sources_config().get("filters") or {})
+    # Global filters come from a user-created sources.yaml only; the example
+    # file's consulting-specific filters must not constrain other users.
+    filters = (get_sources_config().get("filters") or {}) if sources_yaml_exists() else {}
 
     result = PipelineResult()
-    raw_jobs = _discover_raw_jobs(result)
+    raw_jobs, keyword_map = _discover_raw_jobs(result)
 
     with session_scope() as session:
         existing_keys = set(session.execute(select(Job.dedup_key)).scalars().all())
@@ -99,6 +164,9 @@ def run_pipeline(notify: bool = True, export: bool = True) -> PipelineResult:
             if not raw.title:
                 continue
             if not passes_filters(raw, filters):
+                result.filtered_out += 1
+                continue
+            if not _passes_company_keywords(raw, keyword_map):
                 result.filtered_out += 1
                 continue
 
@@ -161,7 +229,9 @@ def run_pipeline(notify: bool = True, export: bool = True) -> PipelineResult:
             detail=json.dumps(result.errors) if result.errors else None,
         )
 
-    if export and result.new_jobs:
+    # Always export so the workbook also reflects application/recruiter edits
+    # made since the last run, not just new jobs.
+    if export:
         try:
             export_excel()
         except Exception as exc:  # noqa: BLE001

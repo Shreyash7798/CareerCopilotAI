@@ -22,7 +22,8 @@ logger = logging.getLogger(__name__)
 
 
 def send_telegram(text: str) -> bool:
-    cfg = (get_settings().get("notifications", {}) or {}).get("telegram", {}) or {}
+    # Refresh so edits to settings.yaml take effect without a restart.
+    cfg = (get_settings(refresh=True).get("notifications", {}) or {}).get("telegram", {}) or {}
     if not cfg.get("enabled") or not cfg.get("bot_token") or not cfg.get("chat_id"):
         return False
     url = f"https://api.telegram.org/bot{cfg['bot_token']}/sendMessage"
@@ -39,7 +40,7 @@ def send_telegram(text: str) -> bool:
 
 
 def send_email(subject: str, body: str) -> bool:
-    cfg = (get_settings().get("notifications", {}) or {}).get("email", {}) or {}
+    cfg = (get_settings(refresh=True).get("notifications", {}) or {}).get("email", {}) or {}
     if not cfg.get("enabled") or not cfg.get("smtp_host") or not cfg.get("to_address"):
         return False
     msg = MIMEText(body, "plain", "utf-8")
@@ -153,3 +154,52 @@ def send_daily_summary() -> None:
     sent_mail = send_email("CareerCopilot daily summary", text)
     with session_scope() as session:
         log_activity(session, "notify", f"Daily summary sent (telegram={sent_tg}, email={sent_mail})")
+
+
+def send_run_summary(result) -> None:
+    """Short Telegram/email message after every scheduled discovery run, so the
+    user gets a heartbeat even when nothing new was found."""
+    cfg = get_settings().get("notifications", {}) or {}
+    if not cfg.get("run_summary", True):
+        return
+    base_url = (get_settings().get("app", {}) or {}).get("base_url", "http://localhost:8000")
+    if result.new_jobs:
+        text = (
+            f"CareerCopilot check-in: {result.new_jobs} new job(s), "
+            f"{result.high_priority} high priority, "
+            f"{result.duplicates} duplicates skipped "
+            f"({result.sources_run} sources, {result.sources_failed} failed).\n{base_url}/jobs"
+        )
+    else:
+        text = (
+            f"CareerCopilot check-in: no new jobs this cycle "
+            f"({result.sources_run} sources checked, {result.duplicates} duplicates skipped)."
+        )
+    if result.errors:
+        text += f"\nIssues: {'; '.join(result.errors[:3])}"
+    sent_tg = send_telegram(text)
+    sent_mail = send_email("CareerCopilot check-in", text) if cfg.get("run_summary_email") else False
+    with session_scope() as session:
+        log_activity(session, "notify", f"Run summary sent (telegram={sent_tg}, email={sent_mail})")
+
+
+def send_test_notification() -> dict:
+    """Send a test message on all configured channels and report the outcome,
+    so channel misconfiguration is diagnosable from the dashboard."""
+    text = "CareerCopilot test notification — your channel is configured correctly."
+    cfg = get_settings(refresh=True).get("notifications", {}) or {}
+    tg_cfg = cfg.get("telegram", {}) or {}
+    email_cfg = cfg.get("email", {}) or {}
+    outcome = {
+        "telegram_enabled": bool(tg_cfg.get("enabled")),
+        "telegram_sent": False,
+        "email_enabled": bool(email_cfg.get("enabled")),
+        "email_sent": False,
+    }
+    if outcome["telegram_enabled"]:
+        outcome["telegram_sent"] = send_telegram(text)
+    if outcome["email_enabled"]:
+        outcome["email_sent"] = send_email("CareerCopilot test", text)
+    with session_scope() as session:
+        log_activity(session, "notify", f"Test notification: {outcome}")
+    return outcome
