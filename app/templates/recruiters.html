@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Recruiters · CareerCopilot AI{% endblock %}
+{% block content %}
+<h1>Recruiter intelligence</h1>
+<p class="small muted">Only store publicly available information (public LinkedIn profiles, published work emails). CareerCopilot never accesses private data or messages anyone on your behalf.</p>
+
+<div class="card">
+  <h2>Add recruiter</h2>
+  <form method="post" action="/recruiters/new" class="grid cols-3">
+    <label class="f">Name <input name="name" required></label>
+    <label class="f">Company <input name="company_name"></label>
+    <label class="f">Department <input name="department"></label>
+    <label class="f">Public LinkedIn URL <input name="linkedin_url" type="url"></label>
+    <label class="f">Public work email <input name="public_email" type="email"></label>
+    <label class="f">Notes <input name="notes"></label>
+    <div><button class="btn btn-accent" type="submit">Add</button></div>
+  </form>
+</div>
+
+<div class="card table-wrap">
+  <table class="list">
+    <tr><th>Name</th><th>Company</th><th>Department</th><th>Links</th><th>Notes</th><th></th></tr>
+    {% for r in recruiters %}
+    <tr>
+      <td><strong>{{ r.name }}</strong></td>
+      <td>{{ r.company.name if r.company else '—' }}</td>
+      <td>{{ r.department or '—' }}</td>
+      <td class="small">
+        {% if r.linkedin_url %}<a href="{{ r.linkedin_url }}" target="_blank" rel="noopener">LinkedIn</a>{% endif %}
+        {% if r.public_email %}<a href="mailto:{{ r.public_email }}">{{ r.public_email }}</a>{% endif %}
+      </td>
+      <td class="small">{{ r.notes or '' }}</td>
+      <td>
+        <form method="post" action="/recruiters/{{ r.id }}/delete" onsubmit="return confirm('Delete this recruiter?')">
+          <button class="btn btn-danger btn-sm" type="submit">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="muted">No recruiters saved yet.</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

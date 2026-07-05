@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Application tracker · CareerCopilot AI{% endblock %}
+{% block content %}
+<h1>Application tracker</h1>
+
+<form class="filters" method="get" action="/applications">
+  <select name="status" onchange="this.form.submit()">
+    <option value="">All statuses</option>
+    {% for s in statuses %}
+    <option value="{{ s }}" {{ 'selected' if status_filter == s }}>{{ s }}</option>
+    {% endfor %}
+  </select>
+</form>
+
+<div class="card">
+  <h2>Add application</h2>
+  <form method="post" action="/applications/new" class="grid cols-3">
+    <label class="f">Company <input name="company_name" required></label>
+    <label class="f">Role <input name="role" required></label>
+    <label class="f">Status
+      <select name="status">{% for s in statuses %}<option>{{ s }}</option>{% endfor %}</select>
+    </label>
+    <label class="f">Date applied <input type="date" name="date_applied"></label>
+    <label class="f">Follow-up date <input type="date" name="follow_up_date"></label>
+    <label class="f">Notes <input name="notes"></label>
+    <div><button class="btn btn-accent" type="submit">Add</button></div>
+  </form>
+</div>
+
+{% for a in applications %}
+<div class="card">
+  <div>
+    <span class="badge status-{{ a.status }}">{{ a.status }}</span>
+    <strong>{{ a.company_name or '—' }}</strong> · {{ a.role or '' }}
+    {% if a.job_id %}<a class="small" href="/jobs/{{ a.job_id }}">(view job)</a>{% endif %}
+  </div>
+  <div class="small muted mt">
+    Applied: {{ a.date_applied.strftime('%d %b %Y') if a.date_applied else '—' }} ·
+    Follow-up: {{ a.follow_up_date.strftime('%d %b %Y') if a.follow_up_date else '—' }} ·
+    Stages: {{ a.interview_stages or '—' }} ·
+    Outcome: {{ a.outcome or '—' }}
+  </div>
+  {% if a.notes %}<div class="small mt">{{ a.notes }}</div>{% endif %}
+
+  <details class="rowform mt">
+    <summary class="small muted">Edit</summary>
+    <form method="post" action="/applications/{{ a.id }}/update" class="grid cols-3 mt">
+      <label class="f">Company <input name="company_name" value="{{ a.company_name or '' }}"></label>
+      <label class="f">Role <input name="role" value="{{ a.role or '' }}"></label>
+      <label class="f">Status
+        <select name="status">{% for s in statuses %}<option {{ 'selected' if a.status == s }}>{{ s }}</option>{% endfor %}</select>
+      </label>
+      <label class="f">Date applied <input type="date" name="date_applied" value="{{ a.date_applied.strftime('%Y-%m-%d') if a.date_applied }}"></label>
+      <label class="f">Follow-up <input type="date" name="follow_up_date" value="{{ a.follow_up_date.strftime('%Y-%m-%d') if a.follow_up_date }}"></label>
+      <label class="f">Interview stages <input name="interview_stages" value="{{ a.interview_stages or '' }}" placeholder="e.g. HR screen > Case round"></label>
+      <label class="f">Outcome <input name="outcome" value="{{ a.outcome or '' }}"></label>
+      <label class="f">Notes <input name="notes" value="{{ a.notes or '' }}"></label>
+      <div>
+        <button class="btn btn-accent" type="submit">Save</button>
+      </div>
+    </form>
+    <form method="post" action="/applications/{{ a.id }}/delete" onsubmit="return confirm('Delete this application?')">
+      <button class="btn btn-danger btn-sm" type="submit">Delete</button>
+    </form>
+  </details>
+</div>
+{% else %}
+<div class="card"><p class="muted">No applications tracked yet. Add one above, or press “Track application” on any job.</p></div>
+{% endfor %}
+{% endblock %}

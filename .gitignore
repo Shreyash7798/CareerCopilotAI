@@ -216,3 +216,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# CareerCopilot local data & user config
+data/
+config/settings.yaml
+config/sources.yaml

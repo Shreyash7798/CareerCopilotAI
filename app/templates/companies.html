@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Companies · CareerCopilot AI{% endblock %}
+{% block content %}
+<h1>Company intelligence</h1>
+
+{% for c in companies %}
+{% set s = stats[c.id] %}
+<div class="card">
+  <div>
+    <strong>{{ c.name }}</strong>
+    {% if c.is_preferred %}<span class="badge hp">preferred</span>{% endif %}
+  </div>
+  <div class="small muted mt">
+    Active roles: {{ s.active_jobs }} ({{ s.high_priority }} high priority) ·
+    Avg match: {{ s.avg_score }} ·
+    Your applications: {{ s.applications }}
+  </div>
+  {% if s.top_locations %}
+  <div class="small mt">Hiring in: {% for loc in s.top_locations %}<span class="badge" style="margin-right:4px">{{ loc }}</span>{% endfor %}</div>
+  {% endif %}
+  <div class="small mt"><a href="/jobs?company={{ c.name }}">View open roles →</a></div>
+</div>
+{% else %}
+<div class="card"><p class="muted">No companies yet — they appear automatically as jobs are discovered.</p></div>
+{% endfor %}
+{% endblock %}
