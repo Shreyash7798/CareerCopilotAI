@@ -18,7 +18,7 @@ from app.analytics import compute_analytics
 from app.config import data_dir, get_company_catalog, get_profile, save_profile
 from app.cover_letter_engine import generate_cover_letter
 from app.db import get_db, session_scope
-from app.exporter import export_excel
+from app.exporter import export_excel, export_google_sheets
 from app.interview_prep import build_interview_prep
 from app.models import (
     APPLICATION_STATUSES,
@@ -611,6 +611,14 @@ def api_export_excel():
 def api_download_excel():
     path = export_excel()
     return FileResponse(str(path), filename=Path(str(path)).name)
+
+
+@router.post("/exports/google-sheets")
+def api_export_google_sheets():
+    spreadsheet_id = export_google_sheets()
+    if not spreadsheet_id:
+        return {"status": "disabled"}
+    return {"status": "synced", "spreadsheet_id": spreadsheet_id}
 
 
 @router.get("/summary/daily")

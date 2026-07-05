@@ -131,8 +131,10 @@ exports:
     enabled: true
     path: data/careercopilot.xlsx
   google_sheets:
-    # Optional; requires a service-account JSON. Left disabled by default to
-    # keep the zero-cost, local-first promise.
+    # Optional; requires a service-account JSON and sharing the spreadsheet
+    # with that service account email. Left disabled by default to keep the
+    # zero-cost, local-first promise. Sync runs after every pipeline cycle
+    # when enabled (same four tabs as the Excel export).
     enabled: false
-    credentials_file: ""
+    credentials_file: config/google-service-account.json
     spreadsheet_id: ""

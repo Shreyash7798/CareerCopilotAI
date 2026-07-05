@@ -593,6 +593,50 @@ def company_catalog_add(sector: str = Form(...), name: str = Form(...)):
     return RedirectResponse("/companies", status_code=303)
 
 
+@router.post("/companies/catalog/add-sector")
+def company_catalog_add_sector(sector: str = Form(...)):
+    catalog = get_company_catalog()
+    added = 0
+    with session_scope() as session:
+        for sec in catalog.get("sectors", []):
+            if sec.get("name") != sector:
+                continue
+            for item in sec.get("companies", []):
+                name = item.get("name")
+                if not name:
+                    continue
+                company = session.execute(
+                    select(Company).where(Company.name == name)
+                ).scalar_one_or_none()
+                if company is not None and company.ats_type:
+                    continue
+                if company is None:
+                    company = Company(name=name)
+                    session.add(company)
+                company.sector = sector
+                company.country = item.get("country")
+                company.ats_type = item.get("ats_type")
+                company.career_url = item.get("career_url")
+                company.ats_config = (
+                    json.dumps(item["ats_config"]) if item.get("ats_config") else None
+                )
+                company.enabled = not item.get("caveat")
+                company.notes = item.get("caveat") or company.notes
+                added += 1
+            log_activity(session, "config", f"Catalog bulk add: {added} companies from {sector}")
+            break
+    return RedirectResponse("/companies", status_code=303)
+
+
+@router.get("/analytics", response_class=HTMLResponse)
+def analytics_page(request: Request, db: Session = Depends(get_db)):
+    return templates.TemplateResponse(
+        request,
+        "analytics.html",
+        {"active": "analytics", "analytics": compute_analytics(db)},
+    )
+
+
 @router.get("/recruiters", response_class=HTMLResponse)
 def recruiters_page(request: Request, db: Session = Depends(get_db)):
     recruiters = db.execute(select(Recruiter).order_by(Recruiter.name)).scalars().all()

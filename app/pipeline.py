@@ -16,7 +16,7 @@ from app import company_sources, notifications
 from app.config import get_settings, get_sources_config, sources_yaml_exists
 from app.db import session_scope
 from app.dedup import dedup_key, is_fuzzy_duplicate
-from app.exporter import export_excel
+from app.exporter import export_excel, export_google_sheets
 from app.models import Company, Job, Recruiter, log_activity
 from app.normalize import normalize, passes_filters
 from app.recruiter_discovery import upsert_recruiters
@@ -350,6 +350,11 @@ def run_pipeline(notify: bool = True, export: bool = True) -> PipelineResult:
         except Exception as exc:  # noqa: BLE001
             result.errors.append(f"excel export: {exc}")
             logger.warning("Excel export failed: %s", exc)
+        try:
+            export_google_sheets()
+        except Exception as exc:  # noqa: BLE001
+            result.errors.append(f"google sheets export: {exc}")
+            logger.warning("Google Sheets export failed: %s", exc)
 
     if notify and result.high_priority:
         try:
