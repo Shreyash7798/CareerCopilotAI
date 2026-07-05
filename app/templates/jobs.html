@@ -29,7 +29,7 @@
       <td class="muted small">{{ job.discovered_at.strftime('%d %b') if job.discovered_at }}</td>
     </tr>
     {% else %}
-    <tr><td colspan="6" class="muted">No jobs found. Configure sources in Settings, then press “Run discovery”.</td></tr>
+    <tr><td colspan="6" class="muted">No jobs found. Add companies on the <a href="/companies">Companies</a> page, then press “Run discovery”.</td></tr>
     {% endfor %}
   </table>
 </div>

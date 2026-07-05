@@ -19,12 +19,21 @@ app:
 scheduler:
   enabled: true
   # How often the discovery pipeline runs (minutes).
-  discovery_interval_minutes: 180
+  discovery_interval_minutes: 60
   # Time of day (24h) for the daily summary notification.
   daily_summary_time: "08:30"
   # IANA timezone for the daily summary (cloud servers usually run UTC).
   # Example: Asia/Kolkata. Leave empty to use the server's local time.
   timezone: ""
+
+bootstrap:
+  # On startup: load starter companies when none are enabled, add Accenture India,
+  # backfill Mumbai/Pune from job titles, rescore, and run discovery when needed.
+  enabled: true
+  starter_pack_on_first_run: true
+  ensure_accenture: true
+  backfill_locations_on_startup: true
+  run_discovery_on_startup: true
 
 profile:
   # This block is auto-populated when you upload a CV, but you can edit it
