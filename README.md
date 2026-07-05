@@ -37,10 +37,15 @@ your accounts.
 - **Resume engine**: generates a tailored DOCX per job by reordering your
   existing skills and bullet points to match the JD. It never fabricates
   experience. PDF is produced automatically when LibreOffice is installed.
+- **Cover letter engine**: tailored DOCX from your profile/CV facts and the
+  JD — local, no fabrication, no paid APIs.
+- **Interview prep**: STAR prompts, skills to emphasise, gap areas, elevator
+  pitch and questions for the interviewer — per job, generated locally.
 - **Application tracker**: company, role, status, dates, follow-ups,
   interview stages, outcome, notes.
-- **Company & recruiter intelligence**: hiring activity per company, and a
-  place to store *publicly available* recruiter details.
+- **Company & recruiter intelligence**: hiring activity per company; when
+  *Extract recruiters from job postings* is enabled on a company, public
+  names and emails found in JDs are stored automatically.
 - **Notifications**: instant Telegram/email alerts for high-priority jobs
   plus a daily summary (new jobs, top matches, companies hiring, follow-ups
   due).

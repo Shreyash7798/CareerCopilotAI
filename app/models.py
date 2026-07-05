@@ -158,10 +158,20 @@ class Resume(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     job_id: Mapped[int | None] = mapped_column(ForeignKey("jobs.id"), nullable=True)
-    kind: Mapped[str] = mapped_column(String(32), default="tailored")  # master | tailored
+    # master | tailored | cover_letter
+    kind: Mapped[str] = mapped_column(String(32), default="tailored")
     file_path: Mapped[str] = mapped_column(String(1024))
     pdf_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     matched_keywords: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class InterviewPrep(Base):
+    __tablename__ = "interview_preps"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"), index=True)
+    content_json: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 

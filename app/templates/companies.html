@@ -33,7 +33,7 @@
   <label class="f">Notes <input name="notes" value="{{ c.notes or '' if c else '' }}"></label>
   <label class="f"><input type="checkbox" name="render" value="true" {{ 'checked' if cfg and cfg.render }}> Render with browser (JavaScript pages)</label>
   <label class="f"><input type="checkbox" name="enabled" value="true" {{ 'checked' if (c and c.enabled) or not c }}> Enabled</label>
-  <label class="f"><input type="checkbox" name="recruiter_search_enabled" value="true" {{ 'checked' if c and c.recruiter_search_enabled }}> Recruiter search (future)</label>
+  <label class="f"><input type="checkbox" name="recruiter_search_enabled" value="true" {{ 'checked' if c and c.recruiter_search_enabled }}> Extract recruiters from job postings</label>
   <div><button class="btn btn-accent" type="submit">Save</button></div>
 </form>
 {% endmacro %}
