@@ -58,3 +58,23 @@ if ! crontab -l 2>/dev/null | grep -qF "scripts/deploy.sh"; then
 fi
 
 log "Done. Verify: curl http://127.0.0.1:8000/api/version"
+
+# Passwordless restart for deploy hook / deploy.sh
+SUDOERS="/etc/sudoers.d/careercopilot-deploy"
+if [[ ! -f "$SUDOERS" ]]; then
+  log "Allowing passwordless service restart for $(whoami)"
+  echo "$(whoami) ALL=(ALL) NOPASSWD: /bin/systemctl restart careercopilot, /bin/systemctl start careercopilot" | sudo tee "$SUDOERS" >/dev/null
+  sudo chmod 440 "$SUDOERS"
+fi
+
+SETTINGS="$APP_DIR/config/settings.yaml"
+if [[ -f "$SETTINGS" ]]; then
+  if grep -q 'deploy_token:' "$SETTINGS"; then
+    log "deploy_token already set in config/settings.yaml"
+  else
+    TOKEN=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
+    log "Add under app: in config/settings.yaml:"
+    echo "  deploy_token: $TOKEN"
+    log "Then add GitHub secrets DEPLOY_HOOK_URL and DEPLOY_TOKEN (same value)"
+  fi
+fi

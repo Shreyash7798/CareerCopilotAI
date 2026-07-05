@@ -22,7 +22,7 @@ from app.config import get_settings
 
 COOKIE_NAME = "careercopilot_session"
 # Paths reachable without a session (login flow + static assets + PWA files).
-PUBLIC_PREFIXES = ("/login", "/static/",)
+PUBLIC_PREFIXES = ("/login", "/static/", "/api/deploy/hook", "/api/version")
 
 
 def configured_password() -> str:

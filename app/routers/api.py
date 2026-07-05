@@ -7,7 +7,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -42,6 +42,7 @@ from app.startup import (
     ensure_accenture,
 )
 
+from app.deploy_hook import run_deploy
 from app.version import deploy_info
 
 router = APIRouter(prefix="/api", tags=["api"])
@@ -51,6 +52,27 @@ router = APIRouter(prefix="/api", tags=["api"])
 def api_version():
     """Deployed git revision — use to confirm OCI pulled the latest main."""
     return deploy_info()
+
+
+@router.post("/deploy/hook")
+def api_deploy_hook(authorization: str | None = Header(None)):
+    """Pull latest main and restart. Requires `app.deploy_token` bearer auth."""
+    import hmac as hmac_mod
+
+    from app.config import get_settings
+
+    expected = str((get_settings().get("app", {}) or {}).get("deploy_token", "") or "")
+    if not expected:
+        raise HTTPException(503, "Deploy hook disabled (set app.deploy_token in settings.yaml)")
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(401, "Missing Bearer token")
+    token = authorization[7:].strip()
+    if not hmac_mod.compare_digest(token, expected):
+        raise HTTPException(401, "Invalid deploy token")
+    try:
+        return run_deploy()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(500, str(exc)) from exc
 
 
 def _job_dict(job: Job) -> dict:

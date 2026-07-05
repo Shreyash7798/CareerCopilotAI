@@ -168,6 +168,13 @@ wire up deploy. Pick **one** of these:
    - `OCI_SSH_KEY` = contents of `~/.ssh/careercopilot_deploy` (private key)
 3. Merge a PR — the **Deploy to OCI** workflow runs `git pull` + restart.
 
+**Option A2 — GitHub Actions over HTTP** (no SSH key)
+
+1. On the VM, add to `config/settings.yaml` under `app:`:
+   `deploy_token: "<random>"` (generate with `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`)
+2. GitHub secrets: `DEPLOY_HOOK_URL` = `http://<your-ip>/api/deploy/hook`, `DEPLOY_TOKEN` = same token.
+3. Merge a PR — workflow POSTs to the hook.
+
 **Option B — Cron on the VM (no GitHub secrets)**
 
 SSH into the box once and run:
