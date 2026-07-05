@@ -2,7 +2,13 @@
 # Every entry uses a public JSON API (no Playwright, no bot protection).
 companies:
   - sector: LinkedIn Job Feeds
+    name: LinkedIn — Civil & Infrastructure (Mumbai)
+  - sector: LinkedIn Job Feeds
     name: LinkedIn — Consulting (Mumbai)
+  - sector: LinkedIn Job Feeds
+    name: LinkedIn — EPC & Construction (India)
+  - sector: Civil, Infrastructure & EPC
+    name: Arup
   - sector: LinkedIn Job Feeds
     name: LinkedIn — Consulting (Pune)
   - sector: Consulting & Advisory

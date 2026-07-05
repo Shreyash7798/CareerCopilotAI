@@ -58,6 +58,9 @@ profile:
     - Bengaluru
   preferred_domains:
     - Global Business Consulting
+    # Also add for civil / infrastructure background, e.g.:
+    # - Civil Engineering
+    # - Infrastructure & EPC
   interests:
     - Business Transformation
     - Operations Consulting
