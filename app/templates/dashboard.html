@@ -9,7 +9,7 @@
   <ol class="small">
     <li>{% if has_cv %}<s>Upload your CV</s> ✓{% else %}<a href="/profile">Upload your CV</a> — your profile and skills are extracted automatically.{% endif %}</li>
     <li>{% if monitored_count %}<s>Pick companies to monitor</s> ✓ ({{ monitored_count }} enabled){% else %}<a href="/companies">Pick companies to monitor</a> — or use the button below to load the starter pack instantly.{% endif %}</li>
-    <li>Press <strong>Run discovery</strong> (top right) — or use <strong>Get results now</strong> below.</li>
+    <li>Discovery runs <strong>automatically every 3 hours</strong> — you rarely need **Run discovery**.</li>
   </ol>
   <form method="post" action="/api/quick-start" class="mt" onsubmit="return quickStart(event)">
     <button class="btn btn-accent" type="submit" id="quick-start-btn">Get results now</button>
@@ -111,14 +111,19 @@ async function quickStart(event) {
     const res = await fetch('/api/quick-start', {method: 'POST'});
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'failed');
-    alert((data.status === 'started' ? 'Started: ' : 'Done: ') +
-          `${data.jobs_total} jobs (${data.high_priority} high priority).` +
-          (data.message ? `\n${data.message}` : '') +
-          (data.companies_enabled ? `\n${data.companies_enabled} companies monitoring.` : '') +
-          (data.locations_backfilled ? `\nBackfilled location on ${data.locations_backfilled} jobs.` : ''));
+    if (typeof showToast === 'function') {
+      showToast(
+        (data.status === 'started' ? 'Started: ' : 'Done: ') +
+        `${data.jobs_total} jobs (${data.high_priority} high priority). Refresh shortly.`,
+        'info',
+        7000
+      );
+    }
     setTimeout(() => location.reload(), data.status === 'started' ? 45000 : 0);
   } catch (err) {
-    alert('Quick start failed: ' + err.message);
+    if (typeof showToast === 'function') {
+      showToast('Quick start failed: ' + err.message, 'err', 7000);
+    }
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'Get results now'; }
   }
