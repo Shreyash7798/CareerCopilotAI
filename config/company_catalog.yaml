@@ -75,6 +75,191 @@ sectors:
           f_TPR: r604800
           max_pages: 3
           detail_limit: 10
+      - name: LinkedIn — Civil & Infrastructure (Mumbai)
+        ats_type: linkedin
+        country: India
+        ats_config:
+          keywords: civil engineering infrastructure EPC construction project
+          location: Mumbai, Maharashtra, India
+          f_TPR: r604800
+          max_pages: 5
+          detail_limit: 20
+      - name: LinkedIn — Civil & Infrastructure (Pune)
+        ats_type: linkedin
+        country: India
+        ats_config:
+          keywords: civil engineer infrastructure construction project manager
+          location: Pune, Maharashtra, India
+          f_TPR: r604800
+          max_pages: 5
+          detail_limit: 20
+      - name: LinkedIn — EPC & Construction (India)
+        ats_type: linkedin
+        country: India
+        ats_config:
+          keywords: EPC construction infrastructure highways metro rail
+          location: India
+          f_TPR: r604800
+          max_pages: 5
+          detail_limit: 20
+      - name: LinkedIn — Infrastructure (Global)
+        ats_type: linkedin
+        country: Global
+        ats_config:
+          keywords: civil engineering infrastructure EPC project manager
+          location: Worldwide
+          f_TPR: r604800
+          max_pages: 3
+          detail_limit: 15
+
+  - name: Civil, Infrastructure & EPC
+    companies:
+      - name: Arup
+        ats_type: careers_page
+        country: Global
+        career_url: "https://www.arup.com/careers/jobs"
+        ats_config:
+          link_selector: "a[href*='/careers/jobs/']"
+          render: false
+          detail_limit: 15
+      - name: Larsen & Toubro (L&T)
+        ats_type: careers_page
+        country: India
+        career_url: "https://careers.larsentoubro.com/search/?q=civil&locationsearch=India"
+        ats_config:
+          link_selector: "a.jobTitle-link"
+          render: true
+          detail_limit: 10
+        caveat: Custom careers portal; test with Test Connection before enabling.
+      - name: Afcons Infrastructure
+        ats_type: careers_page
+        country: India
+        career_url: "https://www.afcons.com/career-opportunities"
+        ats_config:
+          link_selector: "a[href*='career']"
+          render: true
+          detail_limit: 10
+        caveat: Custom careers portal; test with Test Connection before enabling.
+      - name: HCC (Hindustan Construction)
+        ats_type: careers_page
+        country: India
+        career_url: "https://www.hccindia.com/careers/current-openings"
+        ats_config:
+          link_selector: "a[href*='job']"
+          render: true
+          detail_limit: 10
+        caveat: Custom careers portal; test with Test Connection before enabling.
+      - name: GMR Group
+        ats_type: careers_page
+        country: India
+        career_url: "https://www.gmrgroup.in/careers/job-openings"
+        ats_config:
+          link_selector: "a[href*='job']"
+          render: true
+          detail_limit: 10
+        caveat: Airports, highways, energy infra. Test Connection before enabling.
+      - name: Tata Projects
+        ats_type: careers_page
+        country: India
+        career_url: "https://www.tataprojects.com/careers/current-openings"
+        ats_config:
+          link_selector: "a[href*='job']"
+          render: true
+          detail_limit: 10
+        caveat: EPC contractor. Test Connection before enabling.
+      - name: NBCC India
+        ats_type: careers_page
+        country: India
+        career_url: "https://www.nbccindia.com/webEnglish/career"
+        ats_config:
+          link_selector: "a[href*='career']"
+          render: true
+          detail_limit: 10
+        caveat: PSU construction. May block cloud IPs — test before enabling.
+      - name: KEC International
+        ats_type: careers_page
+        country: India
+        career_url: "https://www.kecrpg.com/careers/"
+        ats_config:
+          link_selector: "a[href*='job']"
+          render: true
+          detail_limit: 10
+        caveat: Power transmission EPC. Test Connection before enabling.
+      - name: IRB Infrastructure
+        ats_type: careers_page
+        country: India
+        career_url: "https://www.irb.co.in/careers"
+        ats_config:
+          link_selector: "a[href*='career']"
+          render: true
+        caveat: Roads and highways BOT. Test Connection before enabling.
+      - name: RITES
+        ats_type: careers_page
+        country: India
+        career_url: "https://www.rites.com/careers"
+        ats_config:
+          link_selector: "a[href*='career']"
+          render: true
+        caveat: Rail, transport, infrastructure consulting PSU.
+      - name: AECOM
+        ats_type: careers_page
+        country: Global
+        career_url: "https://aecom.com/careers/job-search?keyword=civil+engineer"
+        ats_config:
+          link_selector: "a[href*='job']"
+          render: true
+          detail_limit: 10
+        caveat: Global engineering firm. Test Connection before enabling.
+      - name: Jacobs
+        ats_type: careers_page
+        country: Global
+        career_url: "https://careers.jacobs.com/global/en/search-results?keywords=infrastructure"
+        ats_config:
+          link_selector: "a[href*='job']"
+          render: true
+          detail_limit: 10
+        caveat: Global engineering and infrastructure.
+      - name: WSP
+        ats_type: careers_page
+        country: Global
+        career_url: "https://www.wsp.com/en-in/careers/job-opportunities"
+        ats_config:
+          link_selector: "a[href*='job']"
+          render: true
+          detail_limit: 10
+        caveat: Engineering and design consultancy.
+      - name: Bechtel
+        ats_type: careers_page
+        country: Global
+        career_url: "https://www.bechtel.com/careers/search-jobs/"
+        ats_config:
+          link_selector: "a[href*='job']"
+          render: true
+        caveat: Global EPC contractor.
+      - name: Fluor
+        ats_type: careers_page
+        country: Global
+        career_url: "https://www.fluor.com/careers/job-search"
+        ats_config:
+          link_selector: "a[href*='job']"
+          render: true
+        caveat: Global EPC.
+      - name: Mott MacDonald
+        ats_type: careers_page
+        country: Global
+        career_url: "https://www.mottmac.com/en/careers/vacancies/"
+        ats_config:
+          link_selector: "a[href*='vacanc']"
+          render: true
+        caveat: Infrastructure and engineering consultancy.
+      - name: Parsons
+        ats_type: careers_page
+        country: Global
+        career_url: "https://jobs.parsons.com/search-jobs?k=infrastructure"
+        ats_config:
+          link_selector: "a[href*='job']"
+          render: true
+        caveat: Infrastructure and defense engineering.
 
   - name: Consulting & Advisory
     companies:
