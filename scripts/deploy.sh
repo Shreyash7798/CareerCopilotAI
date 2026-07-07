@@ -72,6 +72,10 @@ if command -v playwright >/dev/null 2>&1 || [[ -x "$VENV/bin/playwright" ]]; the
   "$VENV/bin/playwright" install chromium 2>/dev/null || log "playwright chromium skipped (optional)"
 fi
 
+if [[ -x "$APP_DIR/scripts/setup-crawl4ai.sh" ]]; then
+  bash "$APP_DIR/scripts/setup-crawl4ai.sh" || log "Crawl4AI setup skipped or failed (optional)"
+fi
+
 if systemctl is-active --quiet "$SERVICE" 2>/dev/null; then
   log "Restarting systemd service $SERVICE"
   sudo systemctl restart "$SERVICE"
