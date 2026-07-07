@@ -55,6 +55,14 @@ def api_version():
     return deploy_info()
 
 
+@router.get("/crawl4ai/health")
+def api_crawl4ai_health():
+    """Check whether the optional Crawl4AI sidecar is reachable."""
+    from app.sources.crawl4ai_client import health_check
+
+    return health_check()
+
+
 @router.post("/deploy/hook")
 def api_deploy_hook(authorization: str | None = Header(None)):
     """Pull latest main and restart. Requires `app.deploy_token` bearer auth."""

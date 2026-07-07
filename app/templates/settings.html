@@ -51,7 +51,7 @@
       <tr><td>Telegram</td><td>{{ 'enabled' if settings.notifications.telegram.enabled else 'disabled' }}</td></tr>
       <tr><td>Email</td><td>{{ 'enabled' if settings.notifications.email.enabled else 'disabled' }}</td></tr>
     </table>
-    <p class="small muted mt">Configure channels in <code>config/settings.yaml</code>. Set <code>scheduler.timezone</code> (e.g. <code>Asia/Kolkata</code>).</p>
+    <p class="small muted">Configure channels in <code>config/settings.yaml</code>. Optional Crawl4AI sidecar (<code>docs/CRAWL4AI.md</code>) improves JS career pages — health: <code>/api/crawl4ai/health</code>.</p>
     <div class="filter-actions mt">
       <button class="btn" onclick="testNotifications(this)">Send test notification</button>
       <button class="btn" onclick="fetch('/api/summary/daily/send', {method:'POST'}).then(() => { if (typeof showToast==='function') showToast('Daily summary sent.', 'info'); else alert('Daily summary sent.'); })">Send daily summary</button>

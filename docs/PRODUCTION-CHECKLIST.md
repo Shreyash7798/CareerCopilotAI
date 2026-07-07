@@ -39,3 +39,10 @@ Use this after deploying to Oracle Cloud or any public host.
 - McKinsey, Bain, Kearney, Alvarez & Marsal: bot-protected from cloud IPs — catalog entries start **disabled**
 - KPMG India, Grant Thornton Bharat: custom JS portals — test before enabling
 - SAP careers pages (Deloitte, EY, Capgemini): descriptions improve after careers_page detail fetch (v1.1)
+- JS-heavy portals: optional [Crawl4AI sidecar](CRAWL4AI.md) improves `careers_page` with render enabled
+
+## Optional: Crawl4AI (better JS career pages)
+
+- [ ] `docker compose -f scripts/docker-compose.crawl4ai.yml up -d`
+- [ ] `config/settings.yaml` → `crawl4ai.enabled: true`
+- [ ] Test Connection on a failing EPC/consulting company

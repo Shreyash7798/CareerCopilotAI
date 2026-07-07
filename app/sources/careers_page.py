@@ -4,27 +4,18 @@ Fetches a page over plain HTTP and extracts job links with a CSS selector.
 If the page is JavaScript-rendered, set `render: true` in sources.yaml and the
 page is rendered with Playwright (Chromium, headless) first.
 
+When Crawl4AI is enabled in settings.yaml, JS-rendered pages can use the
+Crawl4AI sidecar instead of local Playwright (saves RAM on small VMs).
+
 For the first `detail_limit` postings (default 15), follows each job link and
 extracts description text so SAP/Oracle list pages score on full JDs.
 """
 
 from __future__ import annotations
 
-from html import unescape
-from urllib.parse import urljoin
-
-from bs4 import BeautifulSoup
-
+from app.sources import crawl4ai_client
 from app.sources.base import RawJob, SourceError, http_client
-
-_DEFAULT_DETAIL_SELECTORS = (
-    "div.job-description",
-    "div[class*='jobDescription']",
-    "div[class*='description']",
-    "section[class*='description']",
-    "article",
-    "main",
-)
+from app.sources.page_scrape import extract_description, parse_job_listing
 
 
 def _fetch_html_http(url: str) -> str:
@@ -52,88 +43,91 @@ def _fetch_html_playwright(url: str) -> str:
             browser.close()
 
 
+def _fetch_html_crawl4ai(url: str) -> str:
+    return crawl4ai_client.fetch_html(url)
+
+
+def _should_prefer_crawl4ai(render: bool) -> bool:
+    if not render or not crawl4ai_client.is_enabled():
+        return False
+    cfg = crawl4ai_client.crawl4ai_settings()
+    return bool(cfg.get("prefer_over_playwright", True))
+
+
+def _should_fallback_crawl4ai(render: bool) -> bool:
+    if not render or not crawl4ai_client.is_enabled():
+        return False
+    cfg = crawl4ai_client.crawl4ai_settings()
+    return bool(cfg.get("fallback_on_playwright_failure", True))
+
+
 def _page_html(url: str, render: bool) -> str:
-    return _fetch_html_playwright(url) if render else _fetch_html_http(url)
+    if not render:
+        return _fetch_html_http(url)
 
+    errors: list[str] = []
 
-def _extract_description(html: str, detail_selector: str | None) -> str:
-    soup = BeautifulSoup(html, "lxml")
-    if detail_selector:
-        node = soup.select_one(detail_selector)
-        if node:
-            return node.get_text(separator="\n", strip=True)
-    for selector in _DEFAULT_DETAIL_SELECTORS:
-        node = soup.select_one(selector)
-        if node:
-            text = node.get_text(separator="\n", strip=True)
-            if len(text) > 120:
-                return text
-    body = soup.body
-    return body.get_text(separator="\n", strip=True)[:8000] if body else ""
+    if _should_prefer_crawl4ai(render):
+        try:
+            return _fetch_html_crawl4ai(url)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"Crawl4AI: {exc}")
 
-
-def _fetch_description(
-    job_url: str,
-    *,
-    render: bool,
-    detail_selector: str | None,
-    client=None,
-) -> str:
     try:
-        if render:
+        return _fetch_html_playwright(url)
+    except Exception as exc:
+        errors.append(f"Playwright: {exc}")
+        if crawl4ai_client.is_enabled() and _should_fallback_crawl4ai(render):
+            try:
+                return _fetch_html_crawl4ai(url)
+            except Exception as exc2:  # noqa: BLE001
+                errors.append(f"Crawl4AI fallback: {exc2}")
+
+    raise SourceError("Failed to render careers page — " + "; ".join(errors))
+
+
+def _fetch_description_http(job_url: str, detail_selector: str | None, client) -> str:
+    resp = client.get(job_url)
+    if resp.status_code != 200:
+        return ""
+    return extract_description(resp.text, detail_selector)
+
+
+def _fetch_description(job_url: str, *, render: bool, detail_selector: str | None, client=None) -> str:
+    try:
+        if render and _should_prefer_crawl4ai(True):
+            html = _fetch_html_crawl4ai(job_url)
+        elif render:
             html = _fetch_html_playwright(job_url)
         elif client is not None:
-            resp = client.get(job_url)
-            if resp.status_code != 200:
-                return ""
-            html = resp.text
+            return _fetch_description_http(job_url, detail_selector, client)
         else:
             html = _fetch_html_http(job_url)
-        return _extract_description(html, detail_selector)
+        return extract_description(html, detail_selector)
     except Exception:  # noqa: BLE001 - detail fetch is best-effort
         return ""
 
 
 def fetch(entry: dict) -> list[RawJob]:
     url = entry["url"]
-    company = entry.get("company", url)
-    selector = entry.get("link_selector", "a")
     render = bool(entry.get("render"))
     detail_limit = int(entry.get("detail_limit", 15))
     detail_selector = entry.get("detail_selector")
 
     html = _page_html(url, render)
-    soup = BeautifulSoup(html, "lxml")
-    jobs: list[RawJob] = []
-    seen: set[str] = set()
+    fetched = 0
 
     with http_client() as client:
-        for anchor in soup.select(selector):
-            title = unescape(anchor.get_text(strip=True))
-            href = anchor.get("href", "")
-            if not title or not href or len(title) < 4:
-                continue
-            absolute = urljoin(url, href)
-            if absolute in seen:
-                continue
-            seen.add(absolute)
-            description = ""
-            if len(jobs) < detail_limit:
-                description = _fetch_description(
-                    absolute,
-                    render=render,
-                    detail_selector=detail_selector,
-                    client=None if render else client,
-                )
-            jobs.append(
-                RawJob(
-                    company=company,
-                    title=title,
-                    location=entry.get("default_location", ""),
-                    description=description,
-                    url=absolute,
-                    source="careers_page",
-                    external_id=absolute,
-                )
+        def detail_fetcher(job_url: str) -> str:
+            nonlocal fetched
+            if fetched >= detail_limit:
+                return ""
+            fetched += 1
+            return _fetch_description(
+                job_url,
+                render=render,
+                detail_selector=detail_selector,
+                client=None if render else client,
             )
-    return jobs
+
+        return parse_job_listing(html, entry, source="careers_page", fetch_detail=detail_fetcher)

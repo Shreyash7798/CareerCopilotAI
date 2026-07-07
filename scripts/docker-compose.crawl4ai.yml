@@ -1,0 +1,24 @@
+# Crawl4AI sidecar for CareerCopilot AI
+#
+# Start alongside the app on a VM with enough RAM (2 GB+ recommended):
+#   docker compose -f scripts/docker-compose.crawl4ai.yml up -d
+#
+# Then in config/settings.yaml:
+#   crawl4ai:
+#     enabled: true
+#     base_url: http://127.0.0.1:11235
+
+services:
+  crawl4ai:
+    image: unclecode/crawl4ai:latest
+    container_name: careercopilot-crawl4ai
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:11235:11235"
+    shm_size: "1gb"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11235/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
