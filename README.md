@@ -230,7 +230,7 @@ Compare `revision` to the latest commit on `main`. If `/api/quick-start` returns
 
 ```
 Scheduler (APScheduler, in-process)
-  └─ Discovery: app/sources/* (greenhouse, lever, workday, careers_page)
+  └─ Discovery: app/sources/* (greenhouse, lever, workday, careers_page, crawl4ai)
        └─ Normalizer (app/normalize.py)
             └─ Duplicate removal (app/dedup.py)
                  └─ Match scoring (app/scoring.py — deterministic, explainable)

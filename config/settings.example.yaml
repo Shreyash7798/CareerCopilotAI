@@ -132,6 +132,19 @@ linkedin:
   max_pages: 5
   detail_limit: 20
 
+# Optional Crawl4AI sidecar for JS-heavy careers pages (see docs/CRAWL4AI.md).
+# Disabled by default — existing careers_page + Playwright behaviour is unchanged.
+crawl4ai:
+  enabled: false
+  base_url: http://127.0.0.1:11235
+  timeout_seconds: 90
+  delay_before_return_html: 2.0
+  page_timeout_ms: 60000
+  # When enabled, careers_page with render:true uses Crawl4AI instead of local Playwright.
+  prefer_over_playwright: true
+  # If Playwright fails, try Crawl4AI before giving up.
+  fallback_on_playwright_failure: true
+
 notifications:
   # Send a short check-in message after every scheduled discovery run, even
   # when nothing new was found (heartbeat so you know the system is alive).

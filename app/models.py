@@ -37,6 +37,7 @@ ATS_TYPES = [
     "oracle",
     "taleo",
     "careers_page",
+    "crawl4ai",
     "linkedin",
 ]
 

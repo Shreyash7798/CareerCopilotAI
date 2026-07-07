@@ -11,6 +11,7 @@ from collections.abc import Callable
 from app.sources import (
     accenture,
     careers_page,
+    crawl4ai,
     greenhouse,
     lever,
     linkedin,
@@ -26,6 +27,7 @@ REGISTRY: dict[str, Callable[[dict], list[RawJob]]] = {
     "workday": workday.fetch,
     "smartrecruiters": smartrecruiters.fetch,
     "careers_page": careers_page.fetch,
+    "crawl4ai": crawl4ai.fetch,
     "linkedin": linkedin.fetch,
 }
 
