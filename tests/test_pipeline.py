@@ -118,6 +118,23 @@ def test_pipeline_end_to_end_db_config(fake_setup):
         assert "3 jobs fetched" in (company.last_run_status or "")
         logs = session.execute(select(ActivityLog)).scalars().all()
         assert any("Pipeline run" in log.message for log in logs)
+        assert any("Discovery started" in log.message for log in logs)
+
+
+def test_source_timeout_is_isolated(fake_setup, monkeypatch):
+    import time
+
+    def slow_fetcher(entry):
+        time.sleep(5)
+        return []
+
+    monkeypatch.setitem(pipeline_mod.REGISTRY, "greenhouse", slow_fetcher)
+    monkeypatch.setattr(pipeline_mod, "_source_timeout_seconds", lambda: 0.2)
+
+    result = pipeline_mod.run_pipeline(notify=False, export=False)
+    assert result.sources_run == 1
+    assert result.sources_failed == 1
+    assert any("timed out" in err for err in result.errors)
 
 
 def test_disabled_company_is_skipped(fake_setup):

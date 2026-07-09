@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass, field
 
 from sqlalchemy import select
@@ -51,6 +52,25 @@ class PipelineResult:
 FULL_LIST_CONNECTORS = {"greenhouse", "lever", "accenture", "smartrecruiters"}
 
 
+def _pipeline_settings() -> dict:
+    return get_settings().get("pipeline", {}) or {}
+
+
+def _source_timeout_seconds() -> float:
+    return float(_pipeline_settings().get("source_timeout_seconds") or 120)
+
+
+def _fetch_source(entry: dict) -> list[RawJob]:
+    """Fetch one source entry. Raises on failure."""
+    source_type = entry.get("type", "")
+    fetcher = REGISTRY.get(source_type)
+    if fetcher is None:
+        raise ValueError(f"Unknown source type '{source_type}'")
+    fetched = fetcher(entry)
+    logger.info("Source %s/%s: %d jobs", source_type, entry.get("company"), len(fetched))
+    return fetched
+
+
 def _get_or_create_company(session, name: str, profile: dict) -> Company:
     company = session.execute(select(Company).where(Company.name == name)).scalar_one_or_none()
     if company is None:
@@ -66,18 +86,26 @@ def _get_or_create_company(session, name: str, profile: dict) -> Company:
 def _run_entry(entry: dict, result: PipelineResult) -> list[RawJob]:
     """Fetch one source entry, isolating failures. Returns [] on error."""
     source_type = entry.get("type", "")
-    fetcher = REGISTRY.get(source_type)
-    if fetcher is None:
+    company = entry.get("company", "")
+    if source_type not in REGISTRY:
         result.errors.append(f"Unknown source type '{source_type}'")
         return []
+
     result.sources_run += 1
+    timeout = _source_timeout_seconds()
     try:
-        fetched = fetcher(entry)
-        logger.info("Source %s/%s: %d jobs", source_type, entry.get("company"), len(fetched))
-        return fetched
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(_fetch_source, entry)
+            return future.result(timeout=timeout)
+    except FuturesTimeoutError:
+        result.sources_failed += 1
+        msg = f"{source_type}/{company}: timed out after {int(timeout)}s"
+        result.errors.append(msg)
+        logger.warning("Source timed out: %s", msg)
+        return []
     except Exception as exc:  # noqa: BLE001 - sources must be isolated
         result.sources_failed += 1
-        result.errors.append(f"{source_type}/{entry.get('company')}: {exc}")
+        result.errors.append(f"{source_type}/{company}: {exc}")
         logger.warning("Source failed: %s", exc)
         return []
 
@@ -215,6 +243,19 @@ def run_pipeline(notify: bool = True, export: bool = True) -> PipelineResult:
     filters = (get_sources_config().get("filters") or {}) if sources_yaml_exists() else {}
 
     result = PipelineResult()
+
+    with session_scope() as session:
+        due_count = sum(
+            1
+            for company in company_sources.source_companies(session)
+            if company.enabled and company_sources.is_due(company)
+        )
+        log_activity(
+            session,
+            "discovery",
+            f"Discovery started: {due_count} companies due",
+        )
+
     raw_jobs, keyword_map, run_info = _discover_raw_jobs(result)
 
     with session_scope() as session:
