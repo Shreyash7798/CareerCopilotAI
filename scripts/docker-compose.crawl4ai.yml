@@ -1,7 +1,7 @@
 # Crawl4AI sidecar for CareerCopilot AI
 #
 # Start alongside the app on a VM with enough RAM (2 GB+ recommended):
-#   docker compose -f scripts/docker-compose.crawl4ai.yml up -d
+#   docker compose -f scripts/docker-compose.crawl4ai.yml up -d --build
 #
 # Then in config/settings.yaml:
 #   crawl4ai:
@@ -10,7 +10,10 @@
 
 services:
   crawl4ai:
-    image: unclecode/crawl4ai:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.crawl4ai
+    image: careercopilot-crawl4ai:0.8.6
     container_name: careercopilot-crawl4ai
     restart: unless-stopped
     ports:
@@ -20,5 +23,5 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:11235/health"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 40s
+      retries: 5
+      start_period: 120s

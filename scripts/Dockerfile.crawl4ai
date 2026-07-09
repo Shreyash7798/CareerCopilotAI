@@ -1,0 +1,16 @@
+# CareerCopilot Crawl4AI sidecar — pins a stable base image and installs Playwright browsers.
+FROM unclecode/crawl4ai:0.8.6
+
+USER root
+
+# Latest :latest tag can ship without browser binaries; install explicitly.
+RUN playwright install chromium --with-deps \
+    || playwright install chromium
+
+RUN mkdir -p /home/appuser/.cache/ms-playwright \
+    && if compgen -G "/root/.cache/ms-playwright/*" > /dev/null; then \
+         cp -r /root/.cache/ms-playwright/* /home/appuser/.cache/ms-playwright/; \
+       fi \
+    && chown -R appuser:appuser /home/appuser/.cache
+
+USER appuser

@@ -83,7 +83,7 @@ install_docker() {
 
 wait_for_health() {
   local attempt=1
-  while (( attempt <= 30 )); do
+  while (( attempt <= 60 )); do
     if curl -fsS "$HEALTH_URL" >/dev/null 2>&1; then
       log "Crawl4AI healthy at $HEALTH_URL"
       return 0
@@ -120,13 +120,21 @@ if ! compose_cmd version >/dev/null 2>&1; then
   exit 1
 fi
 
-log "Starting Crawl4AI from $COMPOSE_FILE"
-compose_cmd -f "$COMPOSE_FILE" pull 2>/dev/null || true
-compose_cmd -f "$COMPOSE_FILE" up -d
+log "Building and starting Crawl4AI from $COMPOSE_FILE (first build may take several minutes)"
+compose_cmd -f "$COMPOSE_FILE" up -d --build
+
+if ! wait_for_health; then
+  log "WARN: health check slow — trying in-container Playwright browser install"
+  docker_cmd exec -u root careercopilot-crawl4ai bash -c \
+    "playwright install chromium --with-deps || playwright install chromium; chown -R appuser:appuser /home/appuser/.cache" \
+    2>/dev/null || true
+  docker_cmd restart careercopilot-crawl4ai 2>/dev/null || true
+fi
 
 if ! wait_for_health; then
   log "ERROR: Crawl4AI did not become healthy in time"
   compose_cmd -f "$COMPOSE_FILE" logs --tail 40 crawl4ai 2>/dev/null || true
+  log "TIP: 1 GB VMs are tight — resize to 2 GB in Oracle if this keeps failing"
   exit 1
 fi
 
