@@ -80,7 +80,12 @@ if command -v playwright >/dev/null 2>&1 || [[ -x "$VENV/bin/playwright" ]]; the
   "$VENV/bin/playwright" install chromium 2>/dev/null || log "playwright chromium skipped (optional)"
 fi
 
-if [[ -x "$APP_DIR/scripts/setup-crawl4ai.sh" ]]; then
+RAM_MB="$(free -m 2>/dev/null | awk '/^Mem:/{print $2}' || echo 0)"
+if [[ "$RAM_MB" -gt 0 && "$RAM_MB" -lt 1800 ]]; then
+  log "Free-tier VM (${RAM_MB}MB): skipping Crawl4AI Docker"
+  docker stop careercopilot-crawl4ai 2>/dev/null || true
+  "$VENV/bin/python" "$APP_DIR/scripts/disable-crawl4ai-settings.py" 2>/dev/null || true
+elif [[ -x "$APP_DIR/scripts/setup-crawl4ai.sh" ]]; then
   bash "$APP_DIR/scripts/setup-crawl4ai.sh" || log "Crawl4AI setup skipped or failed (optional)"
 fi
 

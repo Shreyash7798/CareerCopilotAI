@@ -8,6 +8,17 @@ HEALTH_URL="${CRAWL4AI_HEALTH_URL:-http://127.0.0.1:11235/health}"
 
 log() { echo "[crawl4ai] $*"; }
 
+total_mb() {
+  free -m 2>/dev/null | awk '/^Mem:/{print $2}' || echo 0
+}
+
+MIN_RAM_MB="${CAREERCOPILOT_MIN_CRAWL4AI_RAM_MB:-1800}"
+RAM="$(total_mb)"
+if [[ "$RAM" -gt 0 && "$RAM" -lt "$MIN_RAM_MB" ]]; then
+  log "skip: ${RAM}MB RAM < ${MIN_RAM_MB}MB — use Playwright in app venv (see scripts/recover-free-tier-vm.sh)"
+  exit 0
+fi
+
 if ! command -v docker >/dev/null 2>&1; then
   log "docker not installed — skip (install Docker on VM for JS career pages)"
   exit 0

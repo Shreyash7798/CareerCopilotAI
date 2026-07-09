@@ -16,7 +16,21 @@ Crawl4AI does **not** fix LinkedIn IP blocks — keep using **paste-import** for
 
 ## Quick setup
 
-### Laptop / SSH (recommended)
+### Oracle Always Free (1 GB RAM) — use this, not Docker
+
+Crawl4AI Docker needs **2 GB+ RAM** and will hang or crash a 1 GB Always Free VM.
+
+On the VM (SSH):
+
+```bash
+cd ~/CareerCopilotAI
+git fetch origin main && git reset --hard origin/main
+bash scripts/recover-free-tier-vm.sh
+```
+
+This stops Docker Crawl4AI, adds free swap, installs Playwright in the app, and restarts CareerCopilot. JS careers pages still work via built-in Playwright.
+
+### Laptop / SSH — Crawl4AI Docker (2 GB+ VM only)
 
 From your laptop terminal (replace the path to your Oracle `.pem` key):
 

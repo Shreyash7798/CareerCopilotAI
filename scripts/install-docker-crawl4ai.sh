@@ -61,8 +61,9 @@ pick_compose_file() {
   local total_mb
   total_mb="$(free -m 2>/dev/null | awk '/^Mem:/{print $2}' || echo 0)"
   if [[ "$total_mb" -gt 0 && "$total_mb" -lt 1800 ]]; then
-    log "Detected ${total_mb}MB RAM — using low-memory Crawl4AI profile"
-    COMPOSE_FILE="$APP_DIR/scripts/docker-compose.crawl4ai-lowmem.yml"
+    log "ERROR: ${total_mb}MB RAM — Crawl4AI Docker needs 2 GB+ (Always Free 1 GB VMs cannot run it)."
+    log "Use free-tier Playwright instead: bash scripts/recover-free-tier-vm.sh"
+    exit 1
   fi
 }
 
