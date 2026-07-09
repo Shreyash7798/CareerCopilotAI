@@ -25,15 +25,30 @@ def main() -> None:
     init_db()
 
     if args.once:
+        from app.discovery_runner import acquire_discovery_lock, clear_discovery_lock
+        from app.notifications import send_run_summary
         from app.pipeline import run_pipeline
 
-        result = run_pipeline()
-        print(
-            f"Discovery finished: {result.new_jobs} new jobs "
-            f"({result.high_priority} high priority), {result.duplicates} duplicates skipped."
-        )
-        for error in result.errors:
-            print(f"  warning: {error}")
+        if not acquire_discovery_lock():
+            print("Discovery already running — skipped.")
+            return
+
+        try:
+            result = run_pipeline()
+            print(
+                f"Discovery finished: {result.new_jobs} new jobs "
+                f"({result.high_priority} high priority), {result.duplicates} duplicates skipped."
+            )
+            for error in result.errors:
+                print(f"  warning: {error}")
+            try:
+                send_run_summary(result)
+            except Exception:  # noqa: BLE001
+                import logging
+
+                logging.getLogger(__name__).exception("Run summary notification failed")
+        finally:
+            clear_discovery_lock()
         return
 
     if args.summary:

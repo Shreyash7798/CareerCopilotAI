@@ -55,6 +55,12 @@ def api_version():
     return deploy_info()
 
 
+@router.get("/health")
+def api_health():
+    """Lightweight liveness probe — does not run discovery or heavy DB work."""
+    return {"ok": True}
+
+
 @router.get("/crawl4ai/health")
 def api_crawl4ai_health():
     """Check whether the optional Crawl4AI sidecar is reachable."""
@@ -106,18 +112,25 @@ def _job_dict(job: Job) -> dict:
 
 
 @router.post("/pipeline/run")
-def api_run_pipeline(background: BackgroundTasks, db: Session = Depends(get_db)):
-    """Trigger a discovery run in the background."""
+def api_run_pipeline(db: Session = Depends(get_db)):
+    """Trigger a discovery run in a background subprocess."""
     from datetime import datetime, timedelta
 
     from sqlalchemy import select
 
+    from app.discovery_runner import is_discovery_running, run_discovery_subprocess
     from app.models import ActivityLog
 
     now = datetime.utcnow()
 
     def _naive(ts):
         return ts.replace(tzinfo=None) if getattr(ts, "tzinfo", None) else ts
+
+    if is_discovery_running():
+        return {
+            "status": "skipped",
+            "message": "Discovery is already running. Check Activity in a few minutes.",
+        }
 
     recent = db.execute(
         select(ActivityLog.timestamp)
@@ -153,8 +166,13 @@ def api_run_pipeline(background: BackgroundTasks, db: Session = Depends(get_db))
                 "message": "Discovery is already running. Check Activity in a few minutes.",
             }
 
-    background.add_task(run_pipeline)
-    return {"status": "started"}
+    outcome = run_discovery_subprocess()
+    if not outcome.get("started"):
+        return {
+            "status": "skipped",
+            "message": "Discovery is already running. Check Activity in a few minutes.",
+        }
+    return {"status": "started", "pid": outcome.get("pid")}
 
 
 @router.post("/pipeline/run-sync")
@@ -176,8 +194,10 @@ def api_run_pipeline_sync():
 
 
 @router.post("/quick-start")
-def api_quick_start(background: BackgroundTasks):
-    """Backfill locations + rescore, then run discovery in the background."""
+def api_quick_start():
+    """Backfill locations + rescore, then run discovery in a subprocess."""
+    from app.discovery_runner import run_discovery_subprocess
+
     companies_changed = 0
     locations_backfilled = 0
 
@@ -208,7 +228,7 @@ def api_quick_start(background: BackgroundTasks):
         )
         enabled = enabled_company_count(session)
 
-    background.add_task(run_pipeline)
+    discovery = run_discovery_subprocess()
 
     return {
         "status": "started",

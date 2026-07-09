@@ -12,3 +12,10 @@ def test_api_version():
     body = res.json()
     assert body["project"] == "CareerCopilotAI"
     assert "revision" in body
+
+
+def test_api_health():
+    client = TestClient(create_app())
+    res = client.get("/api/health")
+    assert res.status_code == 200
+    assert res.json() == {"ok": True}

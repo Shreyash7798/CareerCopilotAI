@@ -63,8 +63,8 @@ Type=simple
 User=$(whoami)
 WorkingDirectory=$APP_DIR
 ExecStart=$APP_DIR/.venv/bin/python run.py
-Restart=on-failure
-RestartSec=5
+Restart=always
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target

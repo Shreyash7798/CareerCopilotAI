@@ -25,7 +25,7 @@ from app.config import (
 from app.db import session_scope
 from app.location_infer import infer_location
 from app.models import Company, Job, log_activity
-from app.pipeline import rescore_all_jobs, run_pipeline
+from app.scheduler import schedule_deferred_discovery
 
 logger = logging.getLogger(__name__)
 
@@ -204,6 +204,8 @@ def run_startup_tasks() -> None:
                 )
 
     if locations_updated:
+        from app.pipeline import rescore_all_jobs
+
         rescored = rescore_all_jobs()
         logger.info("Rescored %d jobs after location backfill", rescored)
 
@@ -216,16 +218,14 @@ def run_startup_tasks() -> None:
     if cfg.get("run_discovery_on_startup", True) and (
         should_discover or bootstrapped or accenture_added or job_count == 0 or overdue
     ):
-        try:
-            result = run_pipeline()
-            logger.info(
-                "Startup discovery: %d new jobs (%d high priority), %d fetched",
-                result.new_jobs,
-                result.high_priority,
-                result.fetched,
-            )
-        except Exception:  # noqa: BLE001
-            logger.exception("Startup discovery failed")
+        delay = int(cfg.get("discovery_startup_delay_seconds") or 180)
+        schedule_deferred_discovery(delay_seconds=delay)
+        logger.info(
+            "Startup discovery deferred by %d seconds (overdue=%s, companies=%d)",
+            delay,
+            overdue,
+            job_count,
+        )
 
 
 def schedule_startup_tasks() -> None:
