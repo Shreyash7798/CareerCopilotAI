@@ -1,0 +1,20 @@
+# Low-memory Crawl4AI profile for 1 GB Oracle free-tier VMs.
+# Use via: COMPOSE_FILE=scripts/docker-compose.crawl4ai-lowmem.yml bash scripts/install-docker-crawl4ai.sh
+#
+# Prefer scripts/docker-compose.crawl4ai.yml on 2 GB+ instances.
+
+services:
+  crawl4ai:
+    image: unclecode/crawl4ai:latest
+    container_name: careercopilot-crawl4ai
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:11235:11235"
+    shm_size: "256mb"
+    mem_limit: "768m"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11235/health"]
+      interval: 45s
+      timeout: 15s
+      retries: 3
+      start_period: 90s

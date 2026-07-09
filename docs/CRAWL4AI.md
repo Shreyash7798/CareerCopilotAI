@@ -16,9 +16,39 @@ Crawl4AI does **not** fix LinkedIn IP blocks — keep using **paste-import** for
 
 ## Quick setup
 
-### 1. Start Crawl4AI (Docker)
+### Laptop / SSH (recommended)
 
-On the VM (2 GB+ RAM recommended):
+From your laptop terminal (replace the path to your Oracle `.pem` key):
+
+```bash
+ssh -i ~/Downloads/your-oracle-key.pem ubuntu@161.118.184.228
+cd ~/CareerCopilotAI
+git fetch origin main && git reset --hard origin/main
+bash scripts/install-docker-crawl4ai.sh
+```
+
+The installer will:
+
+1. Install Docker if missing
+2. Pick the normal or **low-memory** compose file based on VM RAM
+3. Start Crawl4AI on `127.0.0.1:11235`
+4. Set `crawl4ai.enabled: true` in `config/settings.yaml`
+5. Restart the `careercopilot` service
+
+Verify:
+
+```bash
+curl http://127.0.0.1:11235/health
+curl http://127.0.0.1:8000/api/crawl4ai/health
+```
+
+Public check (no login): `http://161.118.184.228/api/crawl4ai/health` should show `"ok":true`.
+
+### Manual steps
+
+#### 1. Start Crawl4AI (Docker)
+
+On the VM (2 GB+ RAM recommended; 1 GB uses low-memory profile automatically):
 
 ```bash
 cd ~/CareerCopilotAI
@@ -26,7 +56,13 @@ docker compose -f scripts/docker-compose.crawl4ai.yml up -d
 curl http://127.0.0.1:11235/health
 ```
 
-### 2. Enable in settings
+On **1 GB** Oracle free tier:
+
+```bash
+docker compose -f scripts/docker-compose.crawl4ai-lowmem.yml up -d
+```
+
+#### 2. Enable in settings
 
 Edit `config/settings.yaml`:
 
@@ -40,7 +76,7 @@ crawl4ai:
 
 Restart CareerCopilot: `sudo systemctl restart careercopilot`
 
-### 3. Use on companies
+#### 3. Use on companies
 
 **Option A — automatic (no company changes)**  
 Companies already using `careers_page` with **Render with browser** will use Crawl4AI when enabled (`prefer_over_playwright`).
@@ -48,7 +84,7 @@ Companies already using `careers_page` with **Render with browser** will use Cra
 **Option B — explicit ATS type**  
 On the Companies page, set ATS type to **crawl4ai** for stubborn portals (same Career URL + link selector as `careers_page`).
 
-### 4. Verify
+#### 4. Verify
 
 - Companies page → **Test connection** on a failing employer
 - Or: `curl -X POST http://localhost:8000/api/crawl4ai/health` (when logged in)
