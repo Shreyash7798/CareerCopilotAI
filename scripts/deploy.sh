@@ -109,7 +109,7 @@ RAM_MB="$(free -m 2>/dev/null | awk '/^Mem:/{print $2}' || echo 0)"
 free_tier_hardening "$RAM_MB"
 
 if command -v playwright >/dev/null 2>&1 || [[ -x "$VENV/bin/playwright" ]]; then
-  "$VENV/bin/playwright" install chromium 2>/dev/null || log "playwright chromium skipped (optional)"
+  bash "$APP_DIR/scripts/install-playwright-deps.sh" 2>/dev/null || log "playwright deps skipped"
 fi
 
 if [[ "$RAM_MB" -gt 0 && "$RAM_MB" -lt 1800 ]]; then

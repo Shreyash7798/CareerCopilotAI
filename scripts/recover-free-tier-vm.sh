@@ -85,7 +85,7 @@ pip install -q -r requirements.txt
 "$VENV/bin/python" "$APP_DIR/scripts/disable-crawl4ai-settings.py"
 
 log "Installing Playwright Chromium in app venv (lightweight JS rendering)"
-"$VENV/bin/playwright" install chromium 2>/dev/null || log "WARN: playwright install skipped"
+bash "$APP_DIR/scripts/install-playwright-deps.sh" || log "WARN: playwright deps install failed"
 
 rm -f "$APP_DIR/data/.discovery.lock" 2>/dev/null || true
 pkill -f "${APP_DIR}/run.py --once" 2>/dev/null || true
