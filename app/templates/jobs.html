@@ -23,9 +23,18 @@
 
 <section class="card panel-card filter-panel">
   <form class="filter-bar filter-bar-stack" method="get" action="/jobs" id="jobs-filter-form">
-    <input type="search" name="q" placeholder="Job title…" value="{{ filters.q }}" aria-label="Job title">
-    <input type="text" name="location" placeholder="Location…" value="{{ filters.location }}" aria-label="Location">
+    <input type="search" name="q" placeholder="Search title, company, or JD…" value="{{ filters.q }}" aria-label="Search">
+    <input type="text" name="location" placeholder="Location (Mumbai, Pune…)" value="{{ filters.location }}" aria-label="Location">
     <input type="text" name="company" placeholder="Company…" value="{{ filters.company }}" aria-label="Company">
+    <select name="source" aria-label="Source">
+      <option value="">All sources</option>
+      <option value="linkedin" {{ 'selected' if filters.source == 'linkedin' }}>LinkedIn</option>
+      <option value="greenhouse" {{ 'selected' if filters.source == 'greenhouse' }}>Greenhouse</option>
+      <option value="lever" {{ 'selected' if filters.source == 'lever' }}>Lever</option>
+      <option value="workday" {{ 'selected' if filters.source == 'workday' }}>Workday</option>
+      <option value="accenture" {{ 'selected' if filters.source == 'accenture' }}>Accenture</option>
+      <option value="careers_page" {{ 'selected' if filters.source == 'careers_page' }}>Careers page</option>
+    </select>
     <input type="number" name="min_score" min="0" max="100" step="5" placeholder="Min score" value="{{ filters.min_score|int if filters.min_score else '' }}" class="filter-narrow" aria-label="Minimum score">
     <label class="filter-check"><input type="checkbox" name="high_priority" value="true" {{ 'checked' if filters.high_priority }}> High priority</label>
     <div class="filter-actions">
@@ -38,6 +47,7 @@
     {% if filters.q %}<span class="filter-chip">Title: {{ filters.q }}</span>{% endif %}
     {% if filters.location %}<span class="filter-chip">Location: {{ filters.location }}</span>{% endif %}
     {% if filters.company %}<span class="filter-chip">Company: {{ filters.company }}</span>{% endif %}
+    {% if filters.source %}<span class="filter-chip">Source: {{ filters.source }}</span>{% endif %}
     {% if filters.min_score > 0 %}<span class="filter-chip">Score ≥ {{ filters.min_score|int }}</span>{% endif %}
     {% if filters.high_priority %}<span class="filter-chip">High priority</span>{% endif %}
   </div>
@@ -94,7 +104,7 @@ async function importLinkedIn(event) {
   try {
     const body = new FormData();
     body.append('url', url);
-    const res = await fetch('/jobs/import-linkedin', {method: 'POST', body});
+    const res = await fetch('/jobs/import-linkedin', {method: 'POST', body, credentials: 'same-origin'});
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Import failed');
     if (typeof showToast === 'function') {

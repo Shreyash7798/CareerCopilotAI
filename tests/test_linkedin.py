@@ -24,6 +24,23 @@ def test_job_id_from_url():
     assert linkedin_mod.job_id_from_url(
         "https://www.linkedin.com/jobs/view/strategy-consultant-at-ey-4434425496"
     ) == "4434425496"
+    assert linkedin_mod.job_id_from_url(
+        "https://www.linkedin.com/jobs/search/?currentJobId=4434425496&keywords=consulting"
+    ) == "4434425496"
+
+
+def test_parse_job_posting_fragment():
+    fragment = (
+        Path(__file__).parent / "fixtures" / "linkedin_job_posting_fragment.html"
+    ).read_text(encoding="utf-8")
+    title, company, location, description, posted = linkedin_mod.parse_job_posting_fragment(
+        fragment
+    )
+    assert title == "Operations Consultant"
+    assert company == "EY India"
+    assert "Mumbai" in location
+    assert "supply chain" in description.lower()
+    assert posted is None
 
 
 def test_parse_search_card(search_html):
@@ -46,7 +63,7 @@ def test_fetch_job_page_parses_json_ld(job_html):
         text = job_html
 
     class FakeClient:
-        def get(self, url):
+        def get(self, url, params=None):
             return FakeResp()
 
     description, posted = linkedin_mod.fetch_job_page(FakeClient(), "https://example.com/job")
@@ -55,6 +72,10 @@ def test_fetch_job_page_parses_json_ld(job_html):
 
 
 def test_fetch_search_mocked(search_html, job_html, monkeypatch):
+    posting_fragment = (
+        Path(__file__).parent / "fixtures" / "linkedin_job_posting_fragment.html"
+    ).read_text(encoding="utf-8")
+
     class FakeResp:
         def __init__(self, text, status_code=200):
             self.text = text
@@ -70,9 +91,12 @@ def test_fetch_search_mocked(search_html, job_html, monkeypatch):
         def get(self, url, params=None):
             if "seeMoreJobPostings" in url:
                 return FakeResp(search_html)
+            if "/jobPosting/" in url:
+                return FakeResp(posting_fragment)
             return FakeResp(job_html)
 
-    monkeypatch.setattr(linkedin_mod, "http_client", lambda timeout=30.0: FakeClient())
+    monkeypatch.setattr(linkedin_mod, "linkedin_client", lambda timeout=30.0: FakeClient())
+    monkeypatch.setattr(linkedin_mod.time, "sleep", lambda *_: None)
 
     jobs = linkedin_mod.fetch(
         {

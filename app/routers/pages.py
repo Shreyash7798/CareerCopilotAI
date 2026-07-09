@@ -4,6 +4,7 @@ desktop browsers; installable as a PWA)."""
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlencode
@@ -11,7 +12,7 @@ from urllib.parse import urlencode
 from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from app import company_sources, resume_engine
@@ -64,10 +65,51 @@ def _parse_bool_query(value: str | None) -> bool:
     return str(value).lower() in ("1", "true", "yes", "on")
 
 
+def _location_tokens(location: str) -> list[str]:
+    """Split a location filter into matchable parts (Mumbai, Pune, Remote, …)."""
+    tokens = [t.strip() for t in re.split(r"[,/|]+", location) if t.strip()]
+    return tokens or [location.strip()]
+
+
+def _apply_job_filters(
+    stmt,
+    *,
+    q: str,
+    location: str,
+    company: str,
+    source: str,
+    high_priority: bool,
+):
+    q = (q or "").strip()
+    location = (location or "").strip()
+    company = (company or "").strip()
+    source = (source or "").strip()
+
+    if q:
+        like = f"%{q}%"
+        stmt = stmt.where(
+            or_(
+                Job.title.ilike(like),
+                Job.description.ilike(like),
+                Job.company.has(Company.name.ilike(like)),
+            )
+        )
+    if location:
+        tokens = _location_tokens(location)
+        stmt = stmt.where(or_(*[Job.location.ilike(f"%{token}%") for token in tokens]))
+    if company:
+        stmt = stmt.where(Job.company.has(Company.name.ilike(f"%{company}%")))
+    if source:
+        stmt = stmt.where(Job.source == source)
+    if high_priority:
+        stmt = stmt.where(Job.is_high_priority.is_(True))
+    return stmt
+
+
 def _jobs_query_string(filters: dict, page: int | None = None) -> str:
     """Build a URL query string for jobs list filters (pagination-safe)."""
     params: list[tuple[str, str]] = []
-    for key in ("q", "location", "company"):
+    for key in ("q", "location", "company", "source"):
         val = (filters.get(key) or "").strip()
         if val:
             params.append((key, val))
@@ -218,6 +260,7 @@ def jobs_page(
     q: str = "",
     location: str = "",
     company: str = "",
+    source: str = "",
     min_score: str | None = Query(None),
     high_priority: str | None = Query(None),
     page: int = 1,
@@ -235,19 +278,23 @@ def jobs_page(
     q = (q or "").strip()
     location = (location or "").strip()
     company = (company or "").strip()
-    if q:
-        stmt = stmt.where(Job.title.ilike(f"%{q}%"))
-        count_stmt = count_stmt.where(Job.title.ilike(f"%{q}%"))
-    if location:
-        stmt = stmt.where(Job.location.ilike(f"%{location}%"))
-        count_stmt = count_stmt.where(Job.location.ilike(f"%{location}%"))
-    if company:
-        company_filter = Job.company.has(Company.name.ilike(f"%{company}%"))
-        stmt = stmt.where(company_filter)
-        count_stmt = count_stmt.where(company_filter)
-    if high_priority_val:
-        stmt = stmt.where(Job.is_high_priority.is_(True))
-        count_stmt = count_stmt.where(Job.is_high_priority.is_(True))
+    source = (source or "").strip()
+    stmt = _apply_job_filters(
+        stmt,
+        q=q,
+        location=location,
+        company=company,
+        source=source,
+        high_priority=high_priority_val,
+    )
+    count_stmt = _apply_job_filters(
+        count_stmt,
+        q=q,
+        location=location,
+        company=company,
+        source=source,
+        high_priority=high_priority_val,
+    )
     total = db.execute(count_stmt).scalar() or 0
     jobs = (
         db.execute(
@@ -262,11 +309,14 @@ def jobs_page(
         "q": q,
         "location": location,
         "company": company,
+        "source": source,
         "min_score": min_score_val,
         "high_priority": high_priority_val,
         "page": page,
     }
-    has_filters = bool(q or location or company or min_score_val > 0 or high_priority_val)
+    has_filters = bool(
+        q or location or company or source or min_score_val > 0 or high_priority_val
+    )
     return templates.TemplateResponse(
         request,
         "jobs.html",
