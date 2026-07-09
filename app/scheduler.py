@@ -15,8 +15,8 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from app.config import get_settings
-from app.notifications import build_daily_summary, send_daily_summary, send_followup_reminders, send_run_summary
-from app.pipeline import run_pipeline
+from app.discovery_runner import run_discovery_subprocess
+from app.notifications import send_daily_summary, send_followup_reminders
 
 logger = logging.getLogger(__name__)
 
@@ -25,19 +25,32 @@ _scheduler: BackgroundScheduler | None = None
 
 def _discovery_job() -> None:
     try:
-        result = run_pipeline()
-        logger.info(
-            "Scheduled discovery: %d new (%d high priority), %d duplicates skipped",
-            result.new_jobs,
-            result.high_priority,
-            result.duplicates,
-        )
-        try:
-            send_run_summary(result)
-        except Exception:  # noqa: BLE001
-            logger.exception("Run summary notification failed")
+        outcome = run_discovery_subprocess()
+        if outcome.get("started"):
+            logger.info("Scheduled discovery subprocess started (pid %s)", outcome.get("pid"))
+        else:
+            logger.info("Scheduled discovery skipped: %s", outcome.get("reason"))
     except Exception:  # noqa: BLE001
-        logger.exception("Scheduled discovery run failed")
+        logger.exception("Scheduled discovery launch failed")
+
+
+def schedule_deferred_discovery(delay_seconds: int = 180) -> None:
+    """Queue a one-shot discovery run so the web server can serve requests first."""
+    if _scheduler is None:
+        return
+    from datetime import datetime, timedelta
+
+    from apscheduler.triggers.date import DateTrigger
+
+    run_at = datetime.now() + timedelta(seconds=delay_seconds)
+    _scheduler.add_job(
+        _discovery_job,
+        DateTrigger(run_date=run_at),
+        id="discovery_deferred",
+        replace_existing=True,
+        max_instances=1,
+    )
+    logger.info("Deferred discovery scheduled in %d seconds", delay_seconds)
 
 
 def start_scheduler() -> BackgroundScheduler | None:

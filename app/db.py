@@ -41,7 +41,20 @@ def init_db() -> None:
 
     engine = get_engine()
     Base.metadata.create_all(engine)
+    _configure_sqlite(engine)
     _auto_migrate(engine)
+
+
+def _configure_sqlite(engine) -> None:
+    """WAL mode lets the dashboard read while discovery writes in another process."""
+    from sqlalchemy import text
+
+    if engine.dialect.name != "sqlite":
+        return
+    with engine.connect() as conn:
+        conn.execute(text("PRAGMA journal_mode=WAL"))
+        conn.execute(text("PRAGMA busy_timeout=30000"))
+        conn.commit()
 
 
 def _auto_migrate(engine) -> None:

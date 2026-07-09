@@ -43,6 +43,8 @@ bootstrap:
   ensure_accenture: true
   backfill_locations_on_startup: true
   run_discovery_on_startup: true
+  # Wait before the first discovery after a deploy/restart so the dashboard loads.
+  discovery_startup_delay_seconds: 180
 
 profile:
   # This block is auto-populated when you upload a CV, but you can edit it

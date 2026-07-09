@@ -86,10 +86,29 @@ else
   log "No systemd unit $SERVICE — reload manually if needed"
 fi
 
+UNIT="/etc/systemd/system/${SERVICE}.service"
+if [[ -f "$UNIT" ]] && grep -q 'Restart=on-failure' "$UNIT" 2>/dev/null; then
+  log "Upgrading systemd unit to Restart=always"
+  sudo sed -i 's/Restart=on-failure/Restart=always/' "$UNIT"
+  sudo sed -i 's/RestartSec=5/RestartSec=10/' "$UNIT" 2>/dev/null || true
+  sudo systemctl daemon-reload
+fi
+
 log "Waiting for $HEALTH_URL (up to $((HEALTH_RETRIES * HEALTH_INTERVAL))s)..."
 if VERSION="$(wait_for_service)"; then
   log "Live version: $VERSION"
 else
+  log "WARN: Service not responding — attempting one more restart"
+  if systemctl list-unit-files "${SERVICE}.service" 2>/dev/null | grep -q "$SERVICE"; then
+    sudo systemctl restart "$SERVICE" 2>/dev/null || true
+    sleep "$HEALTH_INTERVAL"
+    if VERSION="$(wait_for_service)"; then
+      log "Live version after retry: $VERSION"
+    fi
+  fi
+fi
+
+if [[ -z "${VERSION:-}" ]]; then
   log "ERROR: Service not responding on :8000 after $((HEALTH_RETRIES * HEALTH_INTERVAL))s"
   show_service_logs
   log "Deploy pulled $AFTER but health check failed — see logs above"
