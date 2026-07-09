@@ -37,8 +37,13 @@ jobs:
           if [ -n "${OCI_HOST}" ] && [ -n "${OCI_USER}" ] && [ -n "${OCI_SSH_KEY}" ]; then
             echo "Deploying via SSH to ${OCI_USER}@${OCI_HOST}"
             mkdir -p ~/.ssh
-            printf '%s\n' "$OCI_SSH_KEY" > ~/.ssh/deploy_key
+            printf '%s\n' "${OCI_SSH_KEY}" | tr -d '\r' > ~/.ssh/deploy_key
             chmod 600 ~/.ssh/deploy_key
+            if ! ssh-keygen -y -f ~/.ssh/deploy_key >/dev/null 2>&1; then
+              echo "::error::OCI_SSH_KEY secret is invalid. On the VM run: cat ~/.ssh/github_actions_deploy"
+              echo "::error::Re-add the full private key (BEGIN/END lines) at GitHub → Settings → Secrets → OCI_SSH_KEY"
+              exit 1
+            fi
             ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o BatchMode=yes \
               "${OCI_USER}@${OCI_HOST}" bash -s <<SCRIPT
           set -euo pipefail
@@ -46,7 +51,8 @@ jobs:
           git fetch origin main
           git reset --hard origin/main
           chmod +x scripts/*.sh
-          bash scripts/recover-free-tier-vm.sh
+          bash scripts/install-playwright-deps.sh
+          bash scripts/deploy.sh
           curl -fsS http://127.0.0.1:8000/api/version
           SCRIPT
             exit 0
