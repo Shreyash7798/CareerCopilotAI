@@ -36,6 +36,14 @@ show_service_logs() {
   fi
 }
 
+kill_stale_workers() {
+  log "Stopping stale discovery / browser workers"
+  pkill -f "${APP_DIR}/run.py --once" 2>/dev/null || true
+  pkill -f "playwright.*chromium" 2>/dev/null || true
+  pkill -f "chromium.*--headless" 2>/dev/null || true
+  rm -f "$APP_DIR/data/.discovery.lock" 2>/dev/null || true
+}
+
 cd "$APP_DIR"
 
 if [[ ! -d .git ]]; then
@@ -75,6 +83,8 @@ fi
 if [[ -x "$APP_DIR/scripts/setup-crawl4ai.sh" ]]; then
   bash "$APP_DIR/scripts/setup-crawl4ai.sh" || log "Crawl4AI setup skipped or failed (optional)"
 fi
+
+kill_stale_workers
 
 if systemctl is-active --quiet "$SERVICE" 2>/dev/null; then
   log "Restarting systemd service $SERVICE"

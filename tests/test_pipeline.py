@@ -187,6 +187,22 @@ def test_stale_jobs_deactivated_and_reactivated(fake_setup):
         assert by_title["Operations Consultant"].is_active is True
 
 
+def test_max_sources_per_run_limits_batch(fake_setup, monkeypatch):
+    monkeypatch.setattr(pipeline_mod, "_max_sources_per_run", lambda: 1)
+    with db_mod.session_scope() as session:
+        session.add(
+            Company(
+                name="Beta Consulting",
+                ats_type="greenhouse",
+                ats_config='{"board": "beta"}',
+                enabled=True,
+            )
+        )
+    result = pipeline_mod.run_pipeline(notify=False, export=False)
+    assert result.sources_run == 1
+    assert result.sources_skipped >= 1
+
+
 def test_refresh_interval_skips_recent(fake_setup):
     result = pipeline_mod.run_pipeline(notify=False, export=False)
     assert result.sources_run == 1

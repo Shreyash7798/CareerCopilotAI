@@ -24,6 +24,8 @@ pipeline:
   # Per-company timeout (seconds). Stops one slow JS careers page from blocking
   # the whole discovery run on a small cloud VM.
   source_timeout_seconds: 120
+  # Cap companies polled per cycle so a restart cannot hammer all 69 at once.
+  max_sources_per_run: 25
 
 scheduler:
   enabled: true
