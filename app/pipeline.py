@@ -60,6 +60,10 @@ def _source_timeout_seconds() -> float:
     return float(_pipeline_settings().get("source_timeout_seconds") or 120)
 
 
+def _max_sources_per_run() -> int:
+    return int(_pipeline_settings().get("max_sources_per_run") or 25)
+
+
 def _fetch_source(entry: dict) -> list[RawJob]:
     """Fetch one source entry. Raises on failure."""
     source_type = entry.get("type", "")
@@ -127,7 +131,7 @@ def _discover_raw_jobs(
     run_info: dict[str, dict] = {}
 
     with session_scope() as session:
-        companies = company_sources.source_companies(session)
+        companies = list(company_sources.source_companies(session))
         if not companies and sources_yaml_exists():
             imported = company_sources.seed_from_yaml_config(
                 session, get_sources_config(refresh=True)
@@ -137,37 +141,48 @@ def _discover_raw_jobs(
                     session, "discovery", f"Imported {imported} companies from sources.yaml"
                 )
                 session.flush()
-                companies = company_sources.source_companies(session)
+                companies = list(company_sources.source_companies(session))
 
-        now = utcnow_naive()
-        for company in companies:
-            if not company.enabled:
-                continue
-            if not company_sources.is_due(company, now):
-                result.sources_skipped += 1
-                continue
-            entry = company_sources.entry_from_company(company)
-            if entry is None:
-                continue
-            kws = company_sources.keywords_list(company)
-            if kws:
-                keyword_map[company.name.lower()] = kws
-            failures_before = result.sources_failed
-            fetched = _run_entry(entry, result)
-            raw_jobs.extend(fetched)
-            ok = result.sources_failed == failures_before
-            run_info[company.name.lower()] = {
-                "company_id": company.id,
-                "connector": entry["type"],
-                "ok": ok,
-                "fetched": len(fetched),
-            }
-            company.last_run_at = now
-            company.last_run_status = (
-                f"{len(fetched)} jobs fetched"
-                if ok
-                else (result.errors[-1][:250] if result.errors else "failed")
-            )
+    now = utcnow_naive()
+    max_sources = _max_sources_per_run()
+    polled = 0
+
+    for company in companies:
+        if not company.enabled:
+            continue
+        if not company_sources.is_due(company, now):
+            result.sources_skipped += 1
+            continue
+        if polled >= max_sources:
+            result.sources_skipped += 1
+            continue
+        entry = company_sources.entry_from_company(company)
+        if entry is None:
+            continue
+        kws = company_sources.keywords_list(company)
+        if kws:
+            keyword_map[company.name.lower()] = kws
+        failures_before = result.sources_failed
+        fetched = _run_entry(entry, result)
+        raw_jobs.extend(fetched)
+        ok = result.sources_failed == failures_before
+        run_info[company.name.lower()] = {
+            "company_id": company.id,
+            "connector": entry["type"],
+            "ok": ok,
+            "fetched": len(fetched),
+        }
+        polled += 1
+        status = (
+            f"{len(fetched)} jobs fetched"
+            if ok
+            else (result.errors[-1][:250] if result.errors else "failed")
+        )
+        with session_scope() as session:
+            db_company = session.get(Company, company.id)
+            if db_company is not None:
+                db_company.last_run_at = now
+                db_company.last_run_status = status
 
     result.fetched = len(raw_jobs)
     return raw_jobs, keyword_map, run_info

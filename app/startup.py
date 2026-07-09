@@ -10,8 +10,6 @@ import json
 import logging
 import threading
 
-from datetime import datetime, timezone
-
 from sqlalchemy import func, select
 
 from app.company_sources import seed_from_yaml_config
@@ -136,32 +134,6 @@ def backfill_job_locations(session) -> int:
     return updated
 
 
-def _last_pipeline_run_at(session) -> datetime | None:
-    from app.models import ActivityLog
-
-    return session.execute(
-        select(ActivityLog.timestamp)
-        .where(
-            ActivityLog.category == "discovery",
-            ActivityLog.message.like("Pipeline run:%"),
-        )
-        .order_by(ActivityLog.timestamp.desc())
-        .limit(1)
-    ).scalar_one_or_none()
-
-
-def _discovery_overdue(session) -> bool:
-    """True when no completed pipeline run within 2× the scheduled interval."""
-    last = _last_pipeline_run_at(session)
-    if last is None:
-        return True
-    interval = int(get_settings().get("scheduler", {}).get("discovery_interval_minutes") or 180)
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
-    last_naive = last.replace(tzinfo=None) if getattr(last, "tzinfo", None) else last
-    elapsed_min = (now - last_naive).total_seconds() / 60
-    return elapsed_min >= interval * 2
-
-
 def run_startup_tasks() -> None:
     settings = get_settings()
     cfg = settings.get("bootstrap", {}) or {}
@@ -210,20 +182,17 @@ def run_startup_tasks() -> None:
         logger.info("Rescored %d jobs after location backfill", rescored)
 
     job_count = 0
-    overdue = False
     with session_scope() as session:
         job_count = session.execute(select(func.count(Job.id))).scalar() or 0
-        overdue = _discovery_overdue(session)
 
     if cfg.get("run_discovery_on_startup", True) and (
-        should_discover or bootstrapped or accenture_added or job_count == 0 or overdue
+        should_discover or bootstrapped or accenture_added or job_count == 0
     ):
         delay = int(cfg.get("discovery_startup_delay_seconds") or 180)
         schedule_deferred_discovery(delay_seconds=delay)
         logger.info(
-            "Startup discovery deferred by %d seconds (overdue=%s, companies=%d)",
+            "Startup discovery deferred by %d seconds (first-run bootstrap, jobs=%d)",
             delay,
-            overdue,
             job_count,
         )
 
