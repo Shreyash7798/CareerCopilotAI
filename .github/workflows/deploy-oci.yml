@@ -45,8 +45,8 @@ jobs:
           cd ${APP_DIR}
           git fetch origin main
           git reset --hard origin/main
-          chmod +x scripts/deploy.sh
-          ./scripts/deploy.sh
+          chmod +x scripts/*.sh
+          bash scripts/recover-free-tier-vm.sh
           curl -fsS http://127.0.0.1:8000/api/version
           SCRIPT
             exit 0

@@ -44,6 +44,35 @@ kill_stale_workers() {
   rm -f "$APP_DIR/data/.discovery.lock" 2>/dev/null || true
 }
 
+free_tier_hardening() {
+  local ram_mb="$1"
+  if [[ "$ram_mb" -le 0 || "$ram_mb" -ge 1800 ]]; then
+    return
+  fi
+  log "Free-tier hardening (${ram_mb}MB RAM)"
+  pkill -f "docker compose.*crawl4ai" 2>/dev/null || true
+  pkill -f "docker build.*crawl4ai" 2>/dev/null || true
+  if command -v docker >/dev/null 2>&1; then
+    docker stop careercopilot-crawl4ai 2>/dev/null || true
+    docker rm careercopilot-crawl4ai 2>/dev/null || true
+    for f in "$APP_DIR/scripts/docker-compose.crawl4ai.yml" "$APP_DIR/scripts/docker-compose.crawl4ai-lowmem.yml"; do
+      if [[ -f "$f" ]] && docker compose version >/dev/null 2>&1; then
+        docker compose -f "$f" down --remove-orphans 2>/dev/null || true
+      fi
+    done
+  fi
+  if ! swapon --show 2>/dev/null | grep -q .; then
+    if [[ ! -f /swapfile ]]; then
+      log "Creating 1 GB swap file"
+      sudo fallocate -l 1G /swapfile 2>/dev/null || sudo dd if=/dev/zero of=/swapfile bs=1M count=1024 status=none
+      sudo chmod 600 /swapfile
+      sudo mkswap /swapfile
+      grep -q '^/swapfile ' /etc/fstab 2>/dev/null || echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab >/dev/null
+    fi
+    sudo swapon /swapfile 2>/dev/null || true
+  fi
+}
+
 cd "$APP_DIR"
 
 if [[ ! -d .git ]]; then
@@ -76,14 +105,15 @@ if [[ -f "$SETTINGS" ]]; then
   fi
 fi
 
+RAM_MB="$(free -m 2>/dev/null | awk '/^Mem:/{print $2}' || echo 0)"
+free_tier_hardening "$RAM_MB"
+
 if command -v playwright >/dev/null 2>&1 || [[ -x "$VENV/bin/playwright" ]]; then
   "$VENV/bin/playwright" install chromium 2>/dev/null || log "playwright chromium skipped (optional)"
 fi
 
-RAM_MB="$(free -m 2>/dev/null | awk '/^Mem:/{print $2}' || echo 0)"
 if [[ "$RAM_MB" -gt 0 && "$RAM_MB" -lt 1800 ]]; then
   log "Free-tier VM (${RAM_MB}MB): skipping Crawl4AI Docker"
-  docker stop careercopilot-crawl4ai 2>/dev/null || true
   "$VENV/bin/python" "$APP_DIR/scripts/disable-crawl4ai-settings.py" 2>/dev/null || true
 elif [[ -x "$APP_DIR/scripts/setup-crawl4ai.sh" ]]; then
   bash "$APP_DIR/scripts/setup-crawl4ai.sh" || log "Crawl4AI setup skipped or failed (optional)"
