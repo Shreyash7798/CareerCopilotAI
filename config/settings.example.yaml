@@ -29,7 +29,13 @@ pipeline:
 
 scheduler:
   enabled: true
-  # How often the discovery pipeline runs (minutes).
+  # When discovery_auto_interval is true (default), the interval is computed from
+  # how many companies you monitor so each is polled ~2–3×/day (down to hourly).
+  discovery_auto_interval: true
+  target_polls_per_company_per_day: 3
+  min_discovery_interval_minutes: 60
+  max_discovery_interval_minutes: 360
+  # Used only when discovery_auto_interval is false.
   discovery_interval_minutes: 60
   # Time of day (24h) for the daily summary notification.
   daily_summary_time: "08:30"

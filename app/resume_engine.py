@@ -26,6 +26,8 @@ from docx import Document
 
 from app.config import data_dir
 
+TAILOR_DOCX_NAME = "master_tailor.docx"
+
 STOPWORDS = {
     "the", "and", "for", "with", "you", "your", "our", "are", "will", "have",
     "this", "that", "from", "their", "they", "them", "who", "what", "all",
@@ -128,6 +130,138 @@ def _slug(value: str) -> str:
     return re.sub(r"[^a-zA-Z0-9]+", "-", value).strip("-").lower() or "job"
 
 
+def _bullet_text(line: str) -> str | None:
+    stripped = line.strip()
+    if not stripped:
+        return None
+    if stripped[:1] in "•-*–▪●○":
+        return stripped.lstrip("•-*–▪●○ ").strip()
+    if re.match(r"^[-–]\s+", stripped):
+        return re.sub(r"^[-–]\s+", "", stripped).strip()
+    return None
+
+
+def build_master_docx_from_text(raw_text: str, *, parsed: dict | None = None) -> Document:
+    """Build a tailor-friendly DOCX from plain CV text (PDF/TXT uploads)."""
+    parsed = parsed or {}
+    doc = Document()
+    if parsed.get("full_name"):
+        doc.add_paragraph(str(parsed["full_name"]))
+    contact = " · ".join(
+        part for part in (parsed.get("email") or "", parsed.get("phone") or "") if part
+    )
+    if contact:
+        doc.add_paragraph(contact)
+    skills = parsed.get("skills") or []
+    if skills:
+        doc.add_paragraph("Skills")
+        doc.add_paragraph(", ".join(skills))
+
+    in_experience = False
+    for line in raw_text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        lowered = stripped.lower()
+        if len(stripped) < 48 and any(
+            h in lowered for h in ("experience", "employment", "work history")
+        ):
+            doc.add_heading(stripped, level=2)
+            in_experience = True
+            continue
+        bullet = _bullet_text(stripped)
+        if bullet:
+            doc.add_paragraph(bullet, style="List Bullet")
+            in_experience = True
+            continue
+        doc.add_paragraph(stripped)
+    return doc
+
+
+def write_tailor_master_docx(raw_text: str, *, parsed: dict | None = None) -> Path:
+    out_dir = data_dir() / "cv"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / TAILOR_DOCX_NAME
+    build_master_docx_from_text(raw_text, parsed=parsed).save(str(out_path))
+    return out_path
+
+
+def convert_doc_to_docx(source: Path) -> Path | None:
+    """Convert legacy .doc to .docx when LibreOffice is available."""
+    if source.suffix.lower() != ".doc":
+        return None
+    soffice = shutil.which("soffice") or shutil.which("libreoffice")
+    if not soffice:
+        return None
+    out_dir = source.parent
+    try:
+        subprocess.run(
+            [soffice, "--headless", "--convert-to", "docx", "--outdir", str(out_dir), str(source)],
+            check=True,
+            capture_output=True,
+            timeout=120,
+        )
+    except (subprocess.SubprocessError, OSError):
+        return None
+    out = source.with_suffix(".docx")
+    return out if out.exists() else None
+
+
+def resolve_master_docx_path(
+    cv_path: str | None,
+    *,
+    profile_json: str | None = None,
+) -> Path | None:
+    """Return a DOCX master resume path suitable for tailoring."""
+    parsed: dict = {}
+    if profile_json:
+        try:
+            loaded = json.loads(profile_json)
+            if isinstance(loaded, dict):
+                parsed = loaded
+        except json.JSONDecodeError:
+            parsed = {}
+
+    if cv_path:
+        path = Path(cv_path)
+        if path.suffix.lower() == ".docx" and path.exists():
+            return path
+        if path.suffix.lower() == ".doc" and path.exists():
+            converted = convert_doc_to_docx(path)
+            if converted and converted.exists():
+                return converted
+
+    tailor_path = data_dir() / "cv" / TAILOR_DOCX_NAME
+    if tailor_path.exists():
+        return tailor_path
+
+    raw_text = parsed.get("raw_text") or ""
+    if not raw_text and cv_path:
+        source = Path(cv_path)
+        if source.exists():
+            try:
+                from app.cv_parser import extract_text
+
+                raw_text = extract_text(source)
+            except (ValueError, OSError):
+                raw_text = ""
+
+    if not raw_text.strip():
+        return None
+
+    return write_tailor_master_docx(raw_text, parsed=parsed)
+
+
+def _add_targeted_for_line(doc: Document, job_title: str, company: str) -> None:
+    label = f"Targeted for: {job_title} — {company}".strip(" —")
+    if not doc.paragraphs:
+        doc.add_paragraph(label)
+        return
+    targeted = doc.paragraphs[0].insert_paragraph_before(label)
+    if targeted.runs:
+        targeted.runs[0].italic = True
+
+
 def convert_to_pdf(docx_path: Path) -> Path | None:
     soffice = shutil.which("soffice") or shutil.which("libreoffice")
     if not soffice:
@@ -161,12 +295,16 @@ def tailor_resume(
     if master_path.suffix.lower() != ".docx":
         raise ValueError("The master resume must be a .docx file for tailoring.")
 
-    keywords = extract_keywords(job_description)
+    jd_text = (job_description or "").strip()
+    if not jd_text:
+        jd_text = f"{job_title} at {company}"
+    keywords = extract_keywords(jd_text)
     doc = Document(str(master_path))
 
     resume_text = "\n".join(p.text for p in doc.paragraphs).lower()
     matched = [k for k in keywords if k in resume_text]
 
+    _add_targeted_for_line(doc, job_title, company)
     _reorder_bullet_runs(doc, matched or keywords)
     _reorder_skill_lines(doc, matched or keywords)
 

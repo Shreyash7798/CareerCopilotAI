@@ -115,13 +115,19 @@
 
 {% block scripts %}
 <script>
+function apiError(data, fallback) {
+  const detail = data && data.detail;
+  if (Array.isArray(detail)) return detail.map((d) => d.msg || d).join('; ');
+  if (detail) return detail;
+  return fallback || 'request failed';
+}
 async function tailorResume(jobId) {
   const btn = document.getElementById('tailor-btn');
   btn.disabled = true; btn.textContent = 'Generating…';
   try {
-    const res = await fetch(`/api/resumes/tailor/${jobId}`, {method: 'POST'});
+    const res = await fetch(`/api/resumes/tailor/${jobId}`, {method: 'POST', credentials: 'same-origin'});
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'failed');
+    if (!res.ok) throw new Error(apiError(data, 'failed'));
     alert('Tailored resume created.');
     location.reload();
   } catch (err) {
@@ -133,9 +139,9 @@ async function coverLetter(jobId) {
   const btn = document.getElementById('cover-btn');
   btn.disabled = true; btn.textContent = 'Generating…';
   try {
-    const res = await fetch(`/api/jobs/${jobId}/cover-letter`, {method: 'POST'});
+    const res = await fetch(`/api/jobs/${jobId}/cover-letter`, {method: 'POST', credentials: 'same-origin'});
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'failed');
+    if (!res.ok) throw new Error(apiError(data, 'failed'));
     alert('Cover letter DOCX created.');
     location.reload();
   } catch (err) {

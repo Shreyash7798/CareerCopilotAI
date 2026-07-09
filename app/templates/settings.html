@@ -46,7 +46,15 @@
     <header class="panel-head"><h2>Scheduler & notifications</h2></header>
     <table class="kv-table">
       <tr><td>Scheduler</td><td>{{ 'enabled' if settings.scheduler.enabled else 'disabled' }}</td></tr>
-      <tr><td>Discovery interval</td><td>every {{ settings.scheduler.discovery_interval_minutes }} min</td></tr>
+      <tr><td>Discovery interval</td><td>
+        {% if discovery_summary.auto_interval %}
+          every {{ discovery_summary.discovery_interval_minutes }} min (auto)
+        {% else %}
+          every {{ settings.scheduler.discovery_interval_minutes }} min (fixed)
+        {% endif %}
+      </td></tr>
+      <tr><td>Monitored companies</td><td>{{ discovery_summary.enabled_companies }}</td></tr>
+      <tr><td>Target coverage</td><td>~{{ discovery_summary.target_polls_per_company_per_day }}×/day per company ({{ discovery_summary.runs_per_day }} runs/day, {{ discovery_summary.max_sources_per_run }}/run)</td></tr>
       <tr><td>Daily summary</td><td>{{ settings.scheduler.daily_summary_time }}</td></tr>
       <tr><td>Telegram</td><td>{{ 'enabled' if settings.notifications.telegram.enabled else 'disabled' }}</td></tr>
       <tr><td>Email</td><td>{{ 'enabled' if settings.notifications.email.enabled else 'disabled' }}</td></tr>

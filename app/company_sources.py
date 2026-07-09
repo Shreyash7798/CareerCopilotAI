@@ -78,9 +78,12 @@ def is_due(company: Company, now: datetime | None = None) -> bool:
 
 
 def source_companies(session) -> list[Company]:
+    """Enabled companies with ATS config, oldest-checked first for fair rotation."""
     return (
         session.execute(
-            select(Company).where(Company.ats_type.isnot(None)).order_by(Company.name)
+            select(Company)
+            .where(Company.ats_type.isnot(None))
+            .order_by(Company.last_run_at.asc().nulls_first(), Company.name)
         )
         .scalars()
         .all()

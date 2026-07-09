@@ -16,6 +16,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from app.config import get_settings
 from app.discovery_runner import run_discovery_subprocess
+from app.discovery_schedule import effective_discovery_interval_minutes, refresh_discovery_interval
 from app.notifications import send_daily_summary, send_followup_reminders
 
 logger = logging.getLogger(__name__)
@@ -25,6 +26,8 @@ _scheduler: BackgroundScheduler | None = None
 
 def _discovery_job() -> None:
     try:
+        if _scheduler is not None:
+            refresh_discovery_interval(_scheduler)
         outcome = run_discovery_subprocess()
         if outcome.get("started"):
             logger.info("Scheduled discovery subprocess started (pid %s)", outcome.get("pid"))
@@ -61,7 +64,7 @@ def start_scheduler() -> BackgroundScheduler | None:
         logger.info("Scheduler disabled in settings")
         return None
 
-    interval = int(cfg.get("discovery_interval_minutes", 180))
+    interval = effective_discovery_interval_minutes()
     summary_time = str(cfg.get("daily_summary_time", "08:30"))
     hour, _, minute = summary_time.partition(":")
     # e.g. "Asia/Kolkata"; None keeps the server's local timezone (usually UTC
@@ -93,9 +96,18 @@ def start_scheduler() -> BackgroundScheduler | None:
     )
     _scheduler.start()
     logger.info(
-        "Scheduler started: discovery every %d min, daily summary at %s", interval, summary_time
+        "Scheduler started: discovery every %d min (auto), daily summary at %s",
+        interval,
+        summary_time,
     )
     return _scheduler
+
+
+def refresh_discovery_schedule() -> int | None:
+    """Recompute discovery cadence after company list changes."""
+    if _scheduler is None:
+        return None
+    return refresh_discovery_interval(_scheduler)
 
 
 def stop_scheduler() -> None:

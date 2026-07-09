@@ -14,7 +14,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
-from app import company_sources
+from app import company_sources, resume_engine
 from app.analytics import compute_analytics
 from app.config import (
     get_company_catalog,
@@ -23,6 +23,8 @@ from app.config import (
     get_sources_config,
     save_settings,
 )
+from app.discovery_schedule import discovery_schedule_summary, effective_discovery_interval_minutes
+from app.scheduler import refresh_discovery_schedule
 from app.job_visibility import job_age_label, job_status_badge, visible_jobs_filter
 from app.db import get_db, session_scope
 from app.models import (
@@ -185,7 +187,8 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         .all()
     )
     settings = get_settings()
-    discovery_mins = int(settings.get("scheduler", {}).get("discovery_interval_minutes") or 60)
+    discovery_mins = effective_discovery_interval_minutes()
+    discovery_summary = discovery_schedule_summary()
     profile = get_profile()
     display_name = (profile.get("full_name") or "").strip()
     if display_name:
@@ -325,8 +328,11 @@ def job_detail(request: Request, job_id: int, db: Session = Depends(get_db)):
     has_master = False
     has_profile = False
     profile_row = db.execute(select(UserProfile)).scalars().first()
-    if profile_row and profile_row.cv_path and profile_row.cv_path.endswith(".docx"):
-        has_master = Path(profile_row.cv_path).exists()
+    if profile_row:
+        has_master = resume_engine.resolve_master_docx_path(
+            profile_row.cv_path,
+            profile_json=profile_row.profile_json,
+        ) is not None
     if profile_row and (profile_row.profile_json or profile_row.full_name):
         has_profile = True
     if get_profile().get("full_name"):
@@ -595,6 +601,7 @@ def company_create(
             recruiter_search_enabled=recruiter_search_enabled, notes=notes,
         )
         log_activity(session, "config", f"Company added/updated: {name}")
+    refresh_discovery_schedule()
     return RedirectResponse("/companies", status_code=303)
 
 
@@ -637,6 +644,7 @@ def company_update(
                 recruiter_search_enabled=recruiter_search_enabled, notes=notes,
             )
             log_activity(session, "config", f"Company updated: {company.name}")
+    refresh_discovery_schedule()
     return RedirectResponse("/companies", status_code=303)
 
 
@@ -651,6 +659,7 @@ def company_toggle(company_id: int):
                 "config",
                 f"Company {'enabled' if company.enabled else 'disabled'}: {company.name}",
             )
+    refresh_discovery_schedule()
     return RedirectResponse("/companies", status_code=303)
 
 
@@ -737,6 +746,7 @@ def company_catalog_add_sector(sector: str = Form(...)):
                 added += 1
             log_activity(session, "config", f"Catalog bulk add: {added} companies from {sector}")
             break
+    refresh_discovery_schedule()
     return RedirectResponse("/companies", status_code=303)
 
 
@@ -822,10 +832,16 @@ def profile_page(request: Request, db: Session = Depends(get_db)):
 def settings_page(request: Request):
     settings = get_settings(refresh=True)
     sources = get_sources_config(refresh=True)
+    discovery_summary = discovery_schedule_summary()
     return templates.TemplateResponse(
         request,
         "settings.html",
-        {"active": "settings", "settings": settings, "sources": sources},
+        {
+            "active": "settings",
+            "settings": settings,
+            "sources": sources,
+            "discovery_summary": discovery_summary,
+        },
     )
 
 

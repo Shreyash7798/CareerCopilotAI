@@ -591,7 +591,13 @@ async def api_upload_cv(file: UploadFile):
     target = cv_dir / f"master{suffix}"
     target.write_bytes(await file.read())
 
-    parsed = cv_parser.parse_cv(target)
+    stored_path = target
+    if suffix == ".doc":
+        converted = resume_engine.convert_doc_to_docx(target)
+        if converted:
+            stored_path = converted
+
+    parsed = cv_parser.parse_cv(stored_path)
 
     profile = get_profile()
     for field in ("full_name", "email", "phone"):
@@ -612,9 +618,10 @@ async def api_upload_cv(file: UploadFile):
         row.full_name = parsed.get("full_name") or row.full_name
         row.email = parsed.get("email") or row.email
         row.phone = parsed.get("phone") or row.phone
-        row.cv_path = str(target)
-        parsed_no_text = {k: v for k, v in parsed.items() if k != "raw_text"}
-        row.profile_json = json.dumps(parsed_no_text)
+        row.cv_path = str(stored_path)
+        row.profile_json = json.dumps(parsed)
+        if stored_path.suffix.lower() != ".docx":
+            resume_engine.write_tailor_master_docx(parsed.get("raw_text") or "", parsed=parsed)
         log_activity(session, "profile", f"CV uploaded and parsed: {file.filename}")
 
     # Existing discoveries must re-rank for the new profile immediately.
@@ -642,18 +649,27 @@ def api_tailor_resume(job_id: int):
         if job is None:
             raise HTTPException(404, "Job not found")
         profile_row = session.execute(select(UserProfile)).scalars().first()
-        master = profile_row.cv_path if profile_row and profile_row.cv_path else None
-        if not master or not Path(master).exists():
-            raise HTTPException(400, "Upload your master resume (DOCX) first, on the Profile page")
-        if not master.endswith(".docx"):
-            raise HTTPException(400, "Tailoring needs a DOCX master resume; you uploaded a different format")
-
-        result = resume_engine.tailor_resume(
-            master,
-            job_title=job.title,
-            company=job.company.name if job.company else "company",
-            job_description=job.description or "",
+        master = resume_engine.resolve_master_docx_path(
+            profile_row.cv_path if profile_row else None,
+            profile_json=profile_row.profile_json if profile_row else None,
         )
+        if master is None:
+            raise HTTPException(
+                400,
+                "Upload your master resume on the Profile page (DOCX preferred; PDF/TXT also work).",
+            )
+
+        try:
+            result = resume_engine.tailor_resume(
+                master,
+                job_title=job.title,
+                company=job.company.name if job.company else "company",
+                job_description=job.description or "",
+            )
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(500, f"Could not write tailored resume: {exc}") from exc
         resume = Resume(
             job_id=job.id,
             kind="tailored",
