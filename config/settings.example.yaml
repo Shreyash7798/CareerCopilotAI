@@ -20,6 +20,11 @@ app:
   # Generate: python3 -c "import secrets; print(secrets.token_urlsafe(32))"
   deploy_token: ""
 
+pipeline:
+  # Per-company timeout (seconds). Stops one slow JS careers page from blocking
+  # the whole discovery run on a small cloud VM.
+  source_timeout_seconds: 120
+
 scheduler:
   enabled: true
   # How often the discovery pipeline runs (minutes).

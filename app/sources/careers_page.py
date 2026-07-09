@@ -17,6 +17,9 @@ from app.sources import crawl4ai_client
 from app.sources.base import RawJob, SourceError, http_client
 from app.sources.page_scrape import extract_description, parse_job_listing
 
+_PAGE_TIMEOUT_MS = 30_000
+_RENDER_SETTLE_MS = 2_000
+
 
 def _fetch_html_http(url: str) -> str:
     with http_client() as client:
@@ -26,21 +29,41 @@ def _fetch_html_http(url: str) -> str:
     return resp.text
 
 
-def _fetch_html_playwright(url: str) -> str:
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError as exc:  # pragma: no cover
-        raise SourceError("Playwright is not installed; run `playwright install chromium`") from exc
+class _PlaywrightSession:
+    """Reuse one Chromium instance for a listing page and its detail fetches."""
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+    def __init__(self) -> None:
+        self._playwright = None
+        self._browser = None
+        self._page = None
+
+    def __enter__(self) -> _PlaywrightSession:
         try:
-            page = browser.new_page()
-            page.goto(url, wait_until="domcontentloaded", timeout=45000)
-            page.wait_for_timeout(6000)
-            return page.content()
-        finally:
-            browser.close()
+            from playwright.sync_api import sync_playwright
+        except ImportError as exc:  # pragma: no cover
+            raise SourceError("Playwright is not installed; run `playwright install chromium`") from exc
+
+        self._playwright = sync_playwright().start()
+        self._browser = self._playwright.chromium.launch(headless=True)
+        self._page = self._browser.new_page()
+        return self
+
+    def fetch(self, url: str) -> str:
+        assert self._page is not None
+        self._page.goto(url, wait_until="domcontentloaded", timeout=_PAGE_TIMEOUT_MS)
+        self._page.wait_for_timeout(_RENDER_SETTLE_MS)
+        return self._page.content()
+
+    def __exit__(self, *_args) -> None:
+        if self._browser is not None:
+            self._browser.close()
+        if self._playwright is not None:
+            self._playwright.stop()
+
+
+def _fetch_html_playwright(url: str) -> str:
+    with _PlaywrightSession() as session:
+        return session.fetch(url)
 
 
 def _fetch_html_crawl4ai(url: str) -> str:
@@ -93,10 +116,19 @@ def _fetch_description_http(job_url: str, detail_selector: str | None, client) -
     return extract_description(resp.text, detail_selector)
 
 
-def _fetch_description(job_url: str, *, render: bool, detail_selector: str | None, client=None) -> str:
+def _fetch_description(
+    job_url: str,
+    *,
+    render: bool,
+    detail_selector: str | None,
+    client=None,
+    playwright_session: _PlaywrightSession | None = None,
+) -> str:
     try:
         if render and _should_prefer_crawl4ai(True):
             html = _fetch_html_crawl4ai(job_url)
+        elif render and playwright_session is not None:
+            html = playwright_session.fetch(job_url)
         elif render:
             html = _fetch_html_playwright(job_url)
         elif client is not None:
@@ -114,10 +146,30 @@ def fetch(entry: dict) -> list[RawJob]:
     detail_limit = int(entry.get("detail_limit", 15))
     detail_selector = entry.get("detail_selector")
 
+    if render and not _should_prefer_crawl4ai(render):
+        with _PlaywrightSession() as session:
+            html = session.fetch(url)
+            fetched = 0
+
+            def detail_fetcher(job_url: str) -> str:
+                nonlocal fetched
+                if fetched >= detail_limit:
+                    return ""
+                fetched += 1
+                return _fetch_description(
+                    job_url,
+                    render=True,
+                    detail_selector=detail_selector,
+                    playwright_session=session,
+                )
+
+            return parse_job_listing(html, entry, source="careers_page", fetch_detail=detail_fetcher)
+
     html = _page_html(url, render)
     fetched = 0
 
     with http_client() as client:
+
         def detail_fetcher(job_url: str) -> str:
             nonlocal fetched
             if fetched >= detail_limit:

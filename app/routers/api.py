@@ -114,6 +114,11 @@ def api_run_pipeline(background: BackgroundTasks, db: Session = Depends(get_db))
 
     from app.models import ActivityLog
 
+    now = datetime.utcnow()
+
+    def _naive(ts):
+        return ts.replace(tzinfo=None) if getattr(ts, "tzinfo", None) else ts
+
     recent = db.execute(
         select(ActivityLog.timestamp)
         .where(
@@ -123,13 +128,29 @@ def api_run_pipeline(background: BackgroundTasks, db: Session = Depends(get_db))
         .order_by(ActivityLog.timestamp.desc())
         .limit(1)
     ).scalar_one_or_none()
-    if recent is not None:
-        now = datetime.utcnow()
-        recent_naive = recent.replace(tzinfo=None) if getattr(recent, "tzinfo", None) else recent
-        if now - recent_naive < timedelta(minutes=15):
+    if recent is not None and now - _naive(recent) < timedelta(minutes=15):
+        return {
+            "status": "skipped",
+            "message": "Discovery ran recently. It auto-runs every 3 hours — no need to click again.",
+        }
+
+    started = db.execute(
+        select(ActivityLog.timestamp)
+        .where(
+            ActivityLog.category == "discovery",
+            ActivityLog.message.like("Discovery started:%"),
+        )
+        .order_by(ActivityLog.timestamp.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if started is not None:
+        started_naive = _naive(started)
+        recent_naive = _naive(recent) if recent is not None else None
+        in_progress = recent_naive is None or started_naive > recent_naive
+        if in_progress and now - started_naive < timedelta(minutes=30):
             return {
                 "status": "skipped",
-                "message": "Discovery ran recently. It auto-runs every 3 hours — no need to click again.",
+                "message": "Discovery is already running. Check Activity in a few minutes.",
             }
 
     background.add_task(run_pipeline)
