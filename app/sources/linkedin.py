@@ -2,6 +2,7 @@
 
 Uses the same unauthenticated endpoints LinkedIn's public job search pages call:
   GET /jobs-guest/jobs/api/seeMoreJobPostings/search
+  GET /jobs-guest/jobs/api/jobPosting/{id}
 
 No login, cookies, or LinkedIn API keys are required. Individual job pages expose
 schema.org JobPosting JSON-LD for descriptions.
@@ -14,16 +15,37 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from datetime import datetime
 from html import unescape
+from urllib.parse import parse_qs, urlparse
 
 from bs4 import BeautifulSoup
 
-from app.sources.base import RawJob, SourceError, http_client
+from app.sources.base import RawJob, SourceError, USER_AGENT, http_client
 
 SEARCH_API = "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
+JOB_POSTING_API = "https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/{job_id}"
 JOB_ID_RE = re.compile(r"(\d{8,})")
 URN_ID_RE = re.compile(r"urn:li:jobPosting:(\d+)")
+
+LINKEDIN_HEADERS = {
+    "User-Agent": USER_AGENT,
+    "Accept": "application/json, text/html;q=0.9, */*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.linkedin.com/jobs/search",
+}
+
+
+def linkedin_client(timeout: float = 30.0):
+    """HTTP client with headers LinkedIn guest endpoints expect."""
+    import httpx
+
+    return httpx.Client(
+        timeout=timeout,
+        headers=LINKEDIN_HEADERS,
+        follow_redirects=True,
+    )
 
 
 def _parse_datetime(value: str | None) -> datetime | None:
@@ -40,6 +62,13 @@ def _strip_html(text: str) -> str:
 
 
 def job_id_from_url(url: str) -> str | None:
+    parsed = urlparse(url or "")
+    if parsed.query:
+        query = parse_qs(parsed.query)
+        for key in ("currentJobId", "jobId", "job_id"):
+            values = query.get(key) or []
+            if values and values[0].isdigit():
+                return values[0]
     match = JOB_ID_RE.search(url or "")
     return match.group(1) if match else None
 
@@ -61,6 +90,20 @@ def _canonical_job_url(job_id: str, href: str | None = None) -> str:
     return f"https://www.linkedin.com/jobs/view/{job_id}"
 
 
+def _get_with_retry(client, url: str, *, params: dict | None = None, attempts: int = 3):
+    last_resp = None
+    for attempt in range(attempts):
+        resp = client.get(url, params=params)
+        last_resp = resp
+        if resp.status_code == 200:
+            return resp
+        if resp.status_code in (429, 503, 999) and attempt + 1 < attempts:
+            time.sleep(1.5 * (attempt + 1))
+            continue
+        break
+    return last_resp
+
+
 def parse_search_card(card) -> RawJob | None:
     """Parse one job card from the guest search HTML fragment."""
     job_id = _job_id_from_card(card)
@@ -68,9 +111,12 @@ def parse_search_card(card) -> RawJob | None:
         return None
 
     title_el = card.select_one(".base-search-card__title")
-    company_el = card.select_one(".base-search-card__subtitle")
-    location_el = card.select_one(".job-search-card__location")
-    date_el = card.select_one("time.job-search-card__listdate")
+    company_el = card.select_one(".base-search-card__subtitle, h4.base-search-card__subtitle")
+    location_el = card.select_one(
+        ".job-search-card__location, .base-search-card__metadata span, "
+        ".base-search-card__metadata .job-search-card__location"
+    )
+    date_el = card.select_one("time.job-search-card__listdate, time[datetime]")
     link_el = card.select_one("a.base-card__full-link, a[href*='/jobs/view/']")
 
     title = title_el.get_text(strip=True) if title_el else ""
@@ -94,10 +140,61 @@ def parse_search_card(card) -> RawJob | None:
     )
 
 
+def parse_job_posting_fragment(html: str) -> tuple[str, str, str, str, datetime | None]:
+    """Parse the lightweight guest jobPosting API HTML fragment."""
+    soup = BeautifulSoup(html, "lxml")
+    title_el = soup.select_one(
+        ".top-card-layout__title, h2.topcard__title, h1.top-card-layout__title"
+    )
+    company_el = soup.select_one(
+        ".topcard__org-name-link, a.topcard__org-name-link, .top-card-layout__company"
+    )
+    location_el = soup.select_one(
+        ".topcard__flavor--bullet, .top-card-layout__flavor, span.topcard__flavor"
+    )
+    description_el = soup.select_one(
+        ".show-more-less-html__markup, .description__text, .description__job-description"
+    )
+
+    title = title_el.get_text(strip=True) if title_el else ""
+    company = company_el.get_text(strip=True) if company_el else ""
+    location = location_el.get_text(strip=True) if location_el else ""
+    description = description_el.get_text("\n", strip=True) if description_el else ""
+
+    posted_at = None
+    for script in soup.select('script[type="application/ld+json"]'):
+        if not script.string:
+            continue
+        try:
+            data = json.loads(script.string)
+        except json.JSONDecodeError:
+            continue
+        if data.get("@type") != "JobPosting":
+            continue
+        description = description or _strip_html(data.get("description", ""))
+        title = title or (data.get("title") or "")
+        org = data.get("hiringOrganization") or {}
+        if isinstance(org, dict) and not company:
+            company = org.get("name") or company
+        posted_at = _parse_datetime(data.get("datePosted"))
+        break
+
+    return title, company, location, description, posted_at
+
+
+def fetch_job_posting(client, job_id: str) -> tuple[str, str, str, str, datetime | None]:
+    """Return (title, company, location, description, posted_at) from guest jobPosting API."""
+    resp = _get_with_retry(client, JOB_POSTING_API.format(job_id=job_id))
+    if resp is None or resp.status_code != 200:
+        code = resp.status_code if resp is not None else "no response"
+        raise SourceError(f"LinkedIn jobPosting API returned HTTP {code}")
+    return parse_job_posting_fragment(resp.text)
+
+
 def fetch_job_page(client, job_url: str) -> tuple[str, datetime | None]:
     """Return (description, posted_at) from a public LinkedIn job page."""
-    resp = client.get(job_url)
-    if resp.status_code != 200:
+    resp = _get_with_retry(client, job_url)
+    if resp is None or resp.status_code != 200:
         return "", None
     soup = BeautifulSoup(resp.text, "lxml")
     for script in soup.select('script[type="application/ld+json"]'):
@@ -112,7 +209,7 @@ def fetch_job_page(client, job_url: str) -> tuple[str, datetime | None]:
         description = _strip_html(data.get("description", ""))
         posted_at = _parse_datetime(data.get("datePosted"))
         return description, posted_at
-    markup = soup.select_one(".show-more-less-html__markup")
+    markup = soup.select_one(".show-more-less-html__markup, .description__text")
     if markup:
         return markup.get_text("\n", strip=True), None
     return "", None
@@ -126,46 +223,72 @@ def parse_job_url(url: str, *, client=None) -> RawJob:
 
     canonical = _canonical_job_url(job_id, url)
     if client is None:
-        with http_client() as owned:
+        with linkedin_client() as owned:
             return _parse_job_url_with_client(owned, canonical, job_id)
     return _parse_job_url_with_client(client, canonical, job_id)
 
 
 def _parse_job_url_with_client(client, canonical: str, job_id: str) -> RawJob:
-    description, posted_at = fetch_job_page(client, canonical)
-    # Title/company often only in page title or JSON-LD
-    resp = client.get(canonical)
-    if resp.status_code != 200:
-        raise SourceError(f"LinkedIn job page returned HTTP {resp.status_code}")
-    soup = BeautifulSoup(resp.text, "lxml")
-    title = ""
-    company = ""
-    location = ""
-    for script in soup.select('script[type="application/ld+json"]'):
-        if not script.string:
-            continue
-        try:
-            data = json.loads(script.string)
-        except json.JSONDecodeError:
-            continue
-        if data.get("@type") != "JobPosting":
-            continue
-        title = data.get("title") or title
-        org = data.get("hiringOrganization") or {}
-        if isinstance(org, dict):
-            company = org.get("name") or company
-        loc = data.get("jobLocation")
-        if isinstance(loc, dict):
-            addr = loc.get("address") or {}
-            if isinstance(addr, dict):
-                parts = [addr.get("addressLocality"), addr.get("addressRegion"), addr.get("addressCountry")]
-                location = ", ".join(p for p in parts if p)
-        posted_at = posted_at or _parse_datetime(data.get("datePosted"))
-        description = description or _strip_html(data.get("description", ""))
+    title = company = location = description = ""
+    posted_at = None
+
+    try:
+        title, company, location, description, posted_at = fetch_job_posting(client, job_id)
+    except SourceError:
+        pass
+
+    if not title or not description:
+        page_description, page_posted = fetch_job_page(client, canonical)
+        description = description or page_description
+        posted_at = posted_at or page_posted
 
     if not title:
-        h1 = soup.select_one("h1.top-card-layout__title, h1")
-        title = h1.get_text(strip=True) if h1 else f"LinkedIn job {job_id}"
+        resp = _get_with_retry(client, canonical)
+        if resp is None or resp.status_code != 200:
+            raise SourceError(f"LinkedIn job page returned HTTP {resp.status_code if resp else 'error'}")
+        parsed_title, parsed_company, parsed_location, parsed_description, parsed_posted = (
+            parse_job_posting_fragment(resp.text)
+        )
+        title = title or parsed_title
+        company = company or parsed_company
+        location = location or parsed_location
+        description = description or parsed_description
+        posted_at = posted_at or parsed_posted
+
+        if not title:
+            soup = BeautifulSoup(resp.text, "lxml")
+            for script in soup.select('script[type="application/ld+json"]'):
+                if not script.string:
+                    continue
+                try:
+                    data = json.loads(script.string)
+                except json.JSONDecodeError:
+                    continue
+                if data.get("@type") != "JobPosting":
+                    continue
+                title = data.get("title") or title
+                org = data.get("hiringOrganization") or {}
+                if isinstance(org, dict):
+                    company = org.get("name") or company
+                loc = data.get("jobLocation")
+                if isinstance(loc, dict):
+                    addr = loc.get("address") or {}
+                    if isinstance(addr, dict):
+                        parts = [
+                            addr.get("addressLocality"),
+                            addr.get("addressRegion"),
+                            addr.get("addressCountry"),
+                        ]
+                        location = ", ".join(p for p in parts if p)
+                posted_at = posted_at or _parse_datetime(data.get("datePosted"))
+                description = description or _strip_html(data.get("description", ""))
+
+        if not title:
+            h1 = soup.select_one("h1.top-card-layout__title, h1")
+            title = h1.get_text(strip=True) if h1 else ""
+
+    if not title:
+        raise SourceError("Could not parse job title from LinkedIn URL")
 
     return RawJob(
         company=company or "Unknown",
@@ -194,7 +317,7 @@ def fetch(entry: dict) -> list[RawJob]:
     jobs: list[RawJob] = []
     seen_ids: set[str] = set()
 
-    with http_client() as client:
+    with linkedin_client() as client:
         for page in range(max_pages):
             params = {
                 "keywords": keywords,
@@ -206,14 +329,18 @@ def fetch(entry: dict) -> list[RawJob]:
             if remote_filter:
                 params["f_WT"] = remote_filter
 
-            resp = client.get(SEARCH_API, params=params)
-            if resp.status_code != 200:
+            resp = _get_with_retry(client, SEARCH_API, params=params)
+            if resp is None or resp.status_code != 200:
                 if page == 0:
-                    raise SourceError(f"LinkedIn search returned HTTP {resp.status_code}")
+                    code = resp.status_code if resp is not None else "no response"
+                    raise SourceError(
+                        f"LinkedIn search returned HTTP {code}. "
+                        "Datacenter IPs are sometimes blocked — try Import on the Jobs page."
+                    )
                 break
 
             soup = BeautifulSoup(resp.text, "lxml")
-            cards = soup.select("div.base-search-card")
+            cards = soup.select("div.base-search-card, li div.base-search-card")
             if not cards:
                 break
 
@@ -222,12 +349,28 @@ def fetch(entry: dict) -> list[RawJob]:
                 if raw is None or raw.external_id in seen_ids:
                     continue
                 seen_ids.add(raw.external_id)
-                if len(jobs) < detail_limit and raw.url:
-                    description, posted = fetch_job_page(client, raw.url)
-                    if description:
-                        raw.description = description
-                    if posted and not raw.posted_at:
-                        raw.posted_at = posted
+                if len(jobs) < detail_limit and raw.external_id:
+                    try:
+                        title, company, loc, description, posted = fetch_job_posting(
+                            client, raw.external_id
+                        )
+                        if title and not raw.title:
+                            raw.title = title
+                        if company and (not raw.company or raw.company == "Unknown"):
+                            raw.company = company
+                        if loc and not raw.location:
+                            raw.location = loc
+                        if description:
+                            raw.description = description
+                        if posted and not raw.posted_at:
+                            raw.posted_at = posted
+                    except SourceError:
+                        description, posted = fetch_job_page(client, raw.url)
+                        if description:
+                            raw.description = description
+                        if posted and not raw.posted_at:
+                            raw.posted_at = posted
+                    time.sleep(0.35)
                 jobs.append(raw)
 
             if len(cards) < page_size:

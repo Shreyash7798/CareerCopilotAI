@@ -4,6 +4,7 @@ desktop browsers; installable as a PWA)."""
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlencode
@@ -11,10 +12,10 @@ from urllib.parse import urlencode
 from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
-from app import company_sources
+from app import company_sources, resume_engine
 from app.analytics import compute_analytics
 from app.config import (
     get_company_catalog,
@@ -23,6 +24,8 @@ from app.config import (
     get_sources_config,
     save_settings,
 )
+from app.discovery_schedule import discovery_schedule_summary, effective_discovery_interval_minutes
+from app.scheduler import refresh_discovery_schedule
 from app.job_visibility import job_age_label, job_status_badge, visible_jobs_filter
 from app.db import get_db, session_scope
 from app.models import (
@@ -62,10 +65,51 @@ def _parse_bool_query(value: str | None) -> bool:
     return str(value).lower() in ("1", "true", "yes", "on")
 
 
+def _location_tokens(location: str) -> list[str]:
+    """Split a location filter into matchable parts (Mumbai, Pune, Remote, …)."""
+    tokens = [t.strip() for t in re.split(r"[,/|]+", location) if t.strip()]
+    return tokens or [location.strip()]
+
+
+def _apply_job_filters(
+    stmt,
+    *,
+    q: str,
+    location: str,
+    company: str,
+    source: str,
+    high_priority: bool,
+):
+    q = (q or "").strip()
+    location = (location or "").strip()
+    company = (company or "").strip()
+    source = (source or "").strip()
+
+    if q:
+        like = f"%{q}%"
+        stmt = stmt.where(
+            or_(
+                Job.title.ilike(like),
+                Job.description.ilike(like),
+                Job.company.has(Company.name.ilike(like)),
+            )
+        )
+    if location:
+        tokens = _location_tokens(location)
+        stmt = stmt.where(or_(*[Job.location.ilike(f"%{token}%") for token in tokens]))
+    if company:
+        stmt = stmt.where(Job.company.has(Company.name.ilike(f"%{company}%")))
+    if source:
+        stmt = stmt.where(Job.source == source)
+    if high_priority:
+        stmt = stmt.where(Job.is_high_priority.is_(True))
+    return stmt
+
+
 def _jobs_query_string(filters: dict, page: int | None = None) -> str:
     """Build a URL query string for jobs list filters (pagination-safe)."""
     params: list[tuple[str, str]] = []
-    for key in ("q", "location", "company"):
+    for key in ("q", "location", "company", "source"):
         val = (filters.get(key) or "").strip()
         if val:
             params.append((key, val))
@@ -185,7 +229,8 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         .all()
     )
     settings = get_settings()
-    discovery_mins = int(settings.get("scheduler", {}).get("discovery_interval_minutes") or 60)
+    discovery_mins = effective_discovery_interval_minutes()
+    discovery_summary = discovery_schedule_summary()
     profile = get_profile()
     display_name = (profile.get("full_name") or "").strip()
     if display_name:
@@ -215,6 +260,7 @@ def jobs_page(
     q: str = "",
     location: str = "",
     company: str = "",
+    source: str = "",
     min_score: str | None = Query(None),
     high_priority: str | None = Query(None),
     page: int = 1,
@@ -232,19 +278,23 @@ def jobs_page(
     q = (q or "").strip()
     location = (location or "").strip()
     company = (company or "").strip()
-    if q:
-        stmt = stmt.where(Job.title.ilike(f"%{q}%"))
-        count_stmt = count_stmt.where(Job.title.ilike(f"%{q}%"))
-    if location:
-        stmt = stmt.where(Job.location.ilike(f"%{location}%"))
-        count_stmt = count_stmt.where(Job.location.ilike(f"%{location}%"))
-    if company:
-        company_filter = Job.company.has(Company.name.ilike(f"%{company}%"))
-        stmt = stmt.where(company_filter)
-        count_stmt = count_stmt.where(company_filter)
-    if high_priority_val:
-        stmt = stmt.where(Job.is_high_priority.is_(True))
-        count_stmt = count_stmt.where(Job.is_high_priority.is_(True))
+    source = (source or "").strip()
+    stmt = _apply_job_filters(
+        stmt,
+        q=q,
+        location=location,
+        company=company,
+        source=source,
+        high_priority=high_priority_val,
+    )
+    count_stmt = _apply_job_filters(
+        count_stmt,
+        q=q,
+        location=location,
+        company=company,
+        source=source,
+        high_priority=high_priority_val,
+    )
     total = db.execute(count_stmt).scalar() or 0
     jobs = (
         db.execute(
@@ -259,11 +309,14 @@ def jobs_page(
         "q": q,
         "location": location,
         "company": company,
+        "source": source,
         "min_score": min_score_val,
         "high_priority": high_priority_val,
         "page": page,
     }
-    has_filters = bool(q or location or company or min_score_val > 0 or high_priority_val)
+    has_filters = bool(
+        q or location or company or source or min_score_val > 0 or high_priority_val
+    )
     return templates.TemplateResponse(
         request,
         "jobs.html",
@@ -325,8 +378,11 @@ def job_detail(request: Request, job_id: int, db: Session = Depends(get_db)):
     has_master = False
     has_profile = False
     profile_row = db.execute(select(UserProfile)).scalars().first()
-    if profile_row and profile_row.cv_path and profile_row.cv_path.endswith(".docx"):
-        has_master = Path(profile_row.cv_path).exists()
+    if profile_row:
+        has_master = resume_engine.resolve_master_docx_path(
+            profile_row.cv_path,
+            profile_json=profile_row.profile_json,
+        ) is not None
     if profile_row and (profile_row.profile_json or profile_row.full_name):
         has_profile = True
     if get_profile().get("full_name"):
@@ -595,6 +651,7 @@ def company_create(
             recruiter_search_enabled=recruiter_search_enabled, notes=notes,
         )
         log_activity(session, "config", f"Company added/updated: {name}")
+    refresh_discovery_schedule()
     return RedirectResponse("/companies", status_code=303)
 
 
@@ -637,6 +694,7 @@ def company_update(
                 recruiter_search_enabled=recruiter_search_enabled, notes=notes,
             )
             log_activity(session, "config", f"Company updated: {company.name}")
+    refresh_discovery_schedule()
     return RedirectResponse("/companies", status_code=303)
 
 
@@ -651,6 +709,7 @@ def company_toggle(company_id: int):
                 "config",
                 f"Company {'enabled' if company.enabled else 'disabled'}: {company.name}",
             )
+    refresh_discovery_schedule()
     return RedirectResponse("/companies", status_code=303)
 
 
@@ -737,6 +796,7 @@ def company_catalog_add_sector(sector: str = Form(...)):
                 added += 1
             log_activity(session, "config", f"Catalog bulk add: {added} companies from {sector}")
             break
+    refresh_discovery_schedule()
     return RedirectResponse("/companies", status_code=303)
 
 
@@ -822,10 +882,16 @@ def profile_page(request: Request, db: Session = Depends(get_db)):
 def settings_page(request: Request):
     settings = get_settings(refresh=True)
     sources = get_sources_config(refresh=True)
+    discovery_summary = discovery_schedule_summary()
     return templates.TemplateResponse(
         request,
         "settings.html",
-        {"active": "settings", "settings": settings, "sources": sources},
+        {
+            "active": "settings",
+            "settings": settings,
+            "sources": sources,
+            "discovery_summary": discovery_summary,
+        },
     )
 
 

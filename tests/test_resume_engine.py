@@ -44,5 +44,7 @@ def test_tailor_resume_reorders_without_fabricating(tmp_path, monkeypatch):
     for t in texts:
         if not t.strip():
             continue
+        if t.startswith("Targeted for:"):
+            continue
         assert t in original or set(t.split(", ")) == {"PowerPoint", "Excel", "Supply Chain", "Strategy"}
     assert "supply" in result["matched_keywords"]

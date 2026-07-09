@@ -172,6 +172,10 @@ details.rowform summary { cursor: pointer; }
 .dash-sub { margin: 8px 0 0; font-size: .88rem; color: #cbd5e1; line-height: 1.45; }
 .dash-sub strong { color: #fff; font-weight: 600; }
 .dash-hero-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.dash-quick-filters {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  margin: -8px 0 18px; padding: 0 4px;
+}
 .btn-hero {
   background: #fff; color: var(--ink); border-color: #fff; font-weight: 600;
 }

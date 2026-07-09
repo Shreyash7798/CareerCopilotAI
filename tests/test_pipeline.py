@@ -203,6 +203,54 @@ def test_max_sources_per_run_limits_batch(fake_setup, monkeypatch):
     assert result.sources_skipped >= 1
 
 
+def test_fair_rotation_prefers_unpolled_companies(fake_setup, monkeypatch):
+    monkeypatch.setattr(pipeline_mod, "_max_sources_per_run", lambda: 1)
+
+    def fetch_for_board(entry):
+        board = entry.get("board", "")
+        return [
+            RawJob(
+                company=entry.get("company", ""),
+                title=f"Role at {board}",
+                location="Mumbai",
+                description="consulting",
+                url=f"https://example/{board}",
+                source="fake",
+                external_id=board,
+            )
+        ]
+
+    monkeypatch.setitem(pipeline_mod.REGISTRY, "greenhouse", fetch_for_board)
+
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    with db_mod.session_scope() as session:
+        from sqlalchemy import select
+
+        acme = session.execute(select(Company).where(Company.name == "Acme Consulting")).scalar_one()
+        acme.last_run_at = now
+        session.add(
+            Company(
+                name="Zulu Corp",
+                ats_type="greenhouse",
+                ats_config='{"board": "zulu"}',
+                enabled=True,
+            )
+        )
+
+    result = pipeline_mod.run_pipeline(notify=False, export=False)
+    assert result.sources_run == 1
+
+    with db_mod.session_scope() as session:
+        from sqlalchemy import select
+
+        zulu = session.execute(select(Company).where(Company.name == "Zulu Corp")).scalar_one()
+        acme = session.execute(select(Company).where(Company.name == "Acme Consulting")).scalar_one()
+        assert zulu.last_run_at is not None
+        assert acme.last_run_at == now
+
+
 def test_refresh_interval_skips_recent(fake_setup):
     result = pipeline_mod.run_pipeline(notify=False, export=False)
     assert result.sources_run == 1
