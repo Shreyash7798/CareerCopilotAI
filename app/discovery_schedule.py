@@ -12,9 +12,9 @@ import math
 
 from sqlalchemy import func, select
 
+from app.company_sources import enabled_source_count
 from app.config import get_settings
 from app.db import session_scope
-from app.models import Company
 
 logger = logging.getLogger(__name__)
 
@@ -31,16 +31,9 @@ def _pipeline_settings() -> dict:
 
 def enabled_company_count(session=None) -> int:
     if session is not None:
-        return (
-            session.execute(
-                select(func.count(Company.id)).where(
-                    Company.ats_type.isnot(None), Company.enabled.is_(True)
-                )
-            ).scalar()
-            or 0
-        )
+        return enabled_source_count(session)
     with session_scope() as scoped:
-        return enabled_company_count(scoped)
+        return enabled_source_count(scoped)
 
 
 def compute_discovery_interval_minutes(

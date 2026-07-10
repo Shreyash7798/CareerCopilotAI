@@ -7,16 +7,17 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
 from app import cv_parser, resume_engine
 from app.analytics import compute_analytics
 from app.config import data_dir, get_company_catalog, get_profile, save_profile
 from app.db import get_db, session_scope
+from app.deps import get_current_user, require_admin
 from app.cover_letter_engine import generate_cover_letter
 from app.job_visibility import job_age_dict, visible_jobs_filter
 from app.exporter import export_excel, export_google_sheets
@@ -31,9 +32,21 @@ from app.models import (
     Job,
     Recruiter,
     Resume,
-    UserProfile,
+    User,
+    UserJobScore,
     log_activity,
 )
+from app.user_access import (
+    application_owned,
+    attach_user_scores,
+    hydrate_job_from_score,
+    interview_prep_owned,
+    resume_owned,
+    sync_monitor_from_company,
+    user_job_score,
+)
+from app.user_prefs import get_user_preferences, get_user_profile_dict, save_user_preferences, user_cv_dir
+from app.users import list_users, max_users, user_count
 from app.notifications import build_daily_summary, send_daily_summary, send_test_notification
 from app.pipeline import rescore_all_jobs, run_pipeline
 from app.startup import (
@@ -251,11 +264,12 @@ class LinkedInImportIn(BaseModel):
 
 
 @router.post("/jobs/import-linkedin")
-def api_import_linkedin(payload: LinkedInImportIn):
+def api_import_linkedin(request: Request, payload: LinkedInImportIn):
     from app.linkedin_import import import_linkedin_job
 
+    user = get_current_user(request)
     try:
-        return import_linkedin_job(payload.url)
+        return import_linkedin_job(payload.url, user_id=user.id)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
@@ -264,6 +278,7 @@ def api_import_linkedin(payload: LinkedInImportIn):
 
 @router.get("/jobs")
 def api_jobs(
+    request: Request,
     db: Session = Depends(get_db),
     q: str | None = None,
     location: str | None = None,
@@ -272,22 +287,38 @@ def api_jobs(
     limit: int = 100,
     offset: int = 0,
 ):
-    stmt = select(Job).where(visible_jobs_filter(), Job.match_score >= min_score)
+    user = get_current_user(request)
+    score_join = and_(UserJobScore.job_id == Job.id, UserJobScore.user_id == user.id)
+    stmt = (
+        select(Job)
+        .join(UserJobScore, score_join)
+        .where(visible_jobs_filter(), UserJobScore.match_score >= min_score)
+    )
     if q:
         stmt = stmt.where(Job.title.ilike(f"%{q}%"))
     if location:
         stmt = stmt.where(Job.location.ilike(f"%{location}%"))
     if high_priority:
-        stmt = stmt.where(Job.is_high_priority.is_(True))
-    stmt = stmt.order_by(Job.match_score.desc(), Job.discovered_at.desc()).limit(limit).offset(offset)
-    return [_job_dict(j) for j in db.execute(stmt).scalars()]
+        stmt = stmt.where(UserJobScore.is_high_priority.is_(True))
+    stmt = (
+        stmt.order_by(UserJobScore.match_score.desc(), Job.discovered_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    jobs = attach_user_scores(db, db.execute(stmt).scalars().all(), user.id)
+    return [_job_dict(j) for j in jobs]
 
 
 @router.get("/jobs/{job_id}")
-def api_job(job_id: int, db: Session = Depends(get_db)):
+def api_job(request: Request, job_id: int, db: Session = Depends(get_db)):
+    user = get_current_user(request)
     job = db.get(Job, job_id)
     if job is None:
         raise HTTPException(404, "Job not found")
+    score = user_job_score(db, user.id, job_id)
+    if score is None:
+        raise HTTPException(404, "Job not found")
+    hydrate_job_from_score(job, score)
     data = _job_dict(job)
     data["description"] = job.description
     return data
@@ -309,8 +340,17 @@ class ApplicationIn(BaseModel):
 
 
 @router.get("/applications")
-def api_applications(db: Session = Depends(get_db)):
-    apps = db.execute(select(Application).order_by(Application.updated_at.desc())).scalars().all()
+def api_applications(request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request)
+    apps = (
+        db.execute(
+            select(Application)
+            .where(Application.user_id == user.id)
+            .order_by(Application.updated_at.desc())
+        )
+        .scalars()
+        .all()
+    )
     return [
         {
             "id": a.id,
@@ -329,14 +369,16 @@ def api_applications(db: Session = Depends(get_db)):
 
 
 @router.post("/applications")
-def api_create_application(payload: ApplicationIn):
+def api_create_application(request: Request, payload: ApplicationIn):
+    user = get_current_user(request)
     if payload.status not in APPLICATION_STATUSES:
         raise HTTPException(400, f"Status must be one of {APPLICATION_STATUSES}")
     with session_scope() as session:
         data = payload.model_dump()
+        data["user_id"] = user.id
         if payload.job_id:
             job = session.get(Job, payload.job_id)
-            if job is None:
+            if job is None or user_job_score(session, user.id, payload.job_id) is None:
                 raise HTTPException(404, "Job not found")
             data.setdefault("company_name", None)
             data["company_name"] = data["company_name"] or (job.company.name if job.company else None)
@@ -344,28 +386,40 @@ def api_create_application(payload: ApplicationIn):
         application = Application(**data)
         session.add(application)
         session.flush()
-        log_activity(session, "app", f"Application created: {application.company_name} / {application.role}")
+        log_activity(
+            session,
+            "app",
+            f"Application created: {application.company_name} / {application.role}",
+            user_id=user.id,
+        )
         return {"id": application.id}
 
 
 @router.put("/applications/{app_id}")
-def api_update_application(app_id: int, payload: ApplicationIn):
+def api_update_application(request: Request, app_id: int, payload: ApplicationIn):
+    user = get_current_user(request)
     if payload.status not in APPLICATION_STATUSES:
         raise HTTPException(400, f"Status must be one of {APPLICATION_STATUSES}")
     with session_scope() as session:
-        application = session.get(Application, app_id)
+        application = application_owned(session, app_id, user.id)
         if application is None:
             raise HTTPException(404, "Application not found")
         for key, value in payload.model_dump().items():
             setattr(application, key, value)
-        log_activity(session, "app", f"Application updated: {application.company_name} / {application.role}")
+        log_activity(
+            session,
+            "app",
+            f"Application updated: {application.company_name} / {application.role}",
+            user_id=user.id,
+        )
         return {"id": application.id}
 
 
 @router.delete("/applications/{app_id}")
-def api_delete_application(app_id: int):
+def api_delete_application(request: Request, app_id: int):
+    user = get_current_user(request)
     with session_scope() as session:
-        application = session.get(Application, app_id)
+        application = application_owned(session, app_id, user.id)
         if application is None:
             raise HTTPException(404, "Application not found")
         session.delete(application)
@@ -439,7 +493,8 @@ def api_companies(db: Session = Depends(get_db), monitored_only: bool = False):
 
 
 @router.post("/companies")
-def api_create_company(payload: CompanyIn):
+def api_create_company(request: Request, payload: CompanyIn):
+    user = get_current_user(request)
     with session_scope() as session:
         company = session.execute(
             select(Company).where(Company.name == payload.name.strip())
@@ -448,34 +503,39 @@ def api_create_company(payload: CompanyIn):
             company = Company(name=payload.name.strip())
             session.add(company)
         _apply_company_payload(company, payload)
+        sync_monitor_from_company(session, user.id, company)
         session.flush()
-        log_activity(session, "config", f"Company added/updated via API: {company.name}")
+        log_activity(session, "config", f"Company added/updated via API: {company.name}", user_id=user.id)
         return {"id": company.id}
 
 
 @router.put("/companies/{company_id}")
-def api_update_company(company_id: int, payload: CompanyIn):
+def api_update_company(request: Request, company_id: int, payload: CompanyIn):
+    user = get_current_user(request)
     with session_scope() as session:
         company = session.get(Company, company_id)
         if company is None:
             raise HTTPException(404, "Company not found")
         _apply_company_payload(company, payload)
-        log_activity(session, "config", f"Company updated via API: {company.name}")
+        sync_monitor_from_company(session, user.id, company)
+        log_activity(session, "config", f"Company updated via API: {company.name}", user_id=user.id)
         return {"id": company.id}
 
 
 @router.delete("/companies/{company_id}")
-def api_delete_company(company_id: int):
+def api_delete_company(request: Request, company_id: int):
+    user = get_current_user(request)
     with session_scope() as session:
         company = session.get(Company, company_id)
         if company is None:
             raise HTTPException(404, "Company not found")
-        if company.jobs or company.recruiters:
-            company.ats_type = None
-            company.enabled = False
+        from app.user_access import monitor_for_user
+
+        monitor = monitor_for_user(session, user.id, company_id)
+        if monitor is not None:
+            monitor.enabled = False
             return {"unmonitored": company_id}
-        session.delete(company)
-        return {"deleted": company_id}
+        return {"status": "not_monitored"}
 
 
 @router.post("/companies/{company_id}/test")
@@ -584,12 +644,12 @@ def api_profile():
 
 
 @router.post("/profile/cv")
-async def api_upload_cv(file: UploadFile):
+async def api_upload_cv(request: Request, file: UploadFile):
+    user = get_current_user(request)
     suffix = Path(file.filename or "cv").suffix.lower()
     if suffix not in (".pdf", ".docx", ".doc", ".txt"):
         raise HTTPException(400, "Upload a PDF, DOCX or TXT resume")
-    cv_dir = data_dir() / "cv"
-    cv_dir.mkdir(parents=True, exist_ok=True)
+    cv_dir = user_cv_dir(user.id)
     target = cv_dir / f"master{suffix}"
     target.write_bytes(await file.read())
 
@@ -601,7 +661,8 @@ async def api_upload_cv(file: UploadFile):
 
     parsed = cv_parser.parse_cv(stored_path)
 
-    profile = get_profile()
+    prefs = get_user_preferences(user)
+    profile = prefs.get("profile", {}) or {}
     for field in ("full_name", "email", "phone"):
         if parsed.get(field):
             profile[field] = parsed[field]
@@ -610,24 +671,20 @@ async def api_upload_cv(file: UploadFile):
     if parsed.get("skills"):
         merged = list(dict.fromkeys((profile.get("skills") or []) + parsed["skills"]))
         profile["skills"] = merged
-    save_profile(profile)
+    prefs["profile"] = profile
 
     with session_scope() as session:
-        row = session.execute(select(UserProfile)).scalars().first()
-        if row is None:
-            row = UserProfile()
-            session.add(row)
-        row.full_name = parsed.get("full_name") or row.full_name
-        row.email = parsed.get("email") or row.email
-        row.phone = parsed.get("phone") or row.phone
-        row.cv_path = str(stored_path)
-        row.profile_json = json.dumps(parsed)
+        db_user = session.get(User, user.id)
+        if db_user is None:
+            raise HTTPException(404, "User not found")
+        db_user.cv_path = str(stored_path)
+        db_user.profile_json = json.dumps(parsed)
+        db_user.preferences_json = json.dumps(prefs)
         if stored_path.suffix.lower() != ".docx":
             resume_engine.write_tailor_master_docx(parsed.get("raw_text") or "", parsed=parsed)
-        log_activity(session, "profile", f"CV uploaded and parsed: {file.filename}")
+        log_activity(session, "profile", f"CV uploaded and parsed: {file.filename}", user_id=user.id)
 
-    # Existing discoveries must re-rank for the new profile immediately.
-    rescored = rescore_all_jobs()
+    rescored = rescore_all_jobs(user.id)
     return {
         "parsed": {k: v for k, v in parsed.items() if k != "raw_text"},
         "cv_path": str(target),
@@ -636,24 +693,25 @@ async def api_upload_cv(file: UploadFile):
 
 
 @router.post("/jobs/rescore")
-def api_rescore_jobs():
-    """Re-score all stored jobs against the current profile and weights."""
-    return {"rescored": rescore_all_jobs()}
+def api_rescore_jobs(request: Request):
+    user = get_current_user(request)
+    return {"rescored": rescore_all_jobs(user.id)}
 
 
 # ---------------------------------------------------------------- resumes
 
 
 @router.post("/resumes/tailor/{job_id}")
-def api_tailor_resume(job_id: int):
+def api_tailor_resume(request: Request, job_id: int):
+    user = get_current_user(request)
     with session_scope() as session:
         job = session.get(Job, job_id)
-        if job is None:
+        if job is None or user_job_score(session, user.id, job_id) is None:
             raise HTTPException(404, "Job not found")
-        profile_row = session.execute(select(UserProfile)).scalars().first()
+        db_user = session.get(User, user.id)
         master = resume_engine.resolve_master_docx_path(
-            profile_row.cv_path if profile_row else None,
-            profile_json=profile_row.profile_json if profile_row else None,
+            db_user.cv_path if db_user else None,
+            profile_json=db_user.profile_json if db_user else None,
         )
         if master is None:
             raise HTTPException(
@@ -673,6 +731,7 @@ def api_tailor_resume(job_id: int):
         except OSError as exc:
             raise HTTPException(500, f"Could not write tailored resume: {exc}") from exc
         resume = Resume(
+            user_id=user.id,
             job_id=job.id,
             kind="tailored",
             file_path=result["docx"],
@@ -681,7 +740,7 @@ def api_tailor_resume(job_id: int):
         )
         session.add(resume)
         session.flush()
-        log_activity(session, "resume", f"Tailored resume generated for job #{job.id}: {job.title}")
+        log_activity(session, "resume", f"Tailored resume generated for job #{job.id}: {job.title}", user_id=user.id)
         return {
             "id": resume.id,
             "docx": result["docx"],
@@ -691,14 +750,15 @@ def api_tailor_resume(job_id: int):
 
 
 @router.post("/jobs/{job_id}/cover-letter")
-def api_cover_letter(job_id: int):
+def api_cover_letter(request: Request, job_id: int):
+    user = get_current_user(request)
     with session_scope() as session:
         job = session.get(Job, job_id)
-        if job is None:
+        if job is None or user_job_score(session, user.id, job_id) is None:
             raise HTTPException(404, "Job not found")
-        profile_row = session.execute(select(UserProfile)).scalars().first()
-        cv_json = json.loads(profile_row.profile_json) if profile_row and profile_row.profile_json else None
-        if not get_profile().get("full_name") and not (cv_json and cv_json.get("full_name")):
+        cv_json = json.loads(user.profile_json) if user.profile_json else None
+        profile = get_user_profile_dict(user)
+        if not profile.get("full_name") and not (cv_json and cv_json.get("full_name")):
             raise HTTPException(400, "Upload your CV on the Profile page first")
         result = generate_cover_letter(
             job_title=job.title,
@@ -707,6 +767,7 @@ def api_cover_letter(job_id: int):
             cv_json=cv_json,
         )
         resume = Resume(
+            user_id=user.id,
             job_id=job.id,
             kind="cover_letter",
             file_path=result["docx"],
@@ -714,7 +775,7 @@ def api_cover_letter(job_id: int):
         )
         session.add(resume)
         session.flush()
-        log_activity(session, "resume", f"Cover letter generated for job #{job.id}: {job.title}")
+        log_activity(session, "resume", f"Cover letter generated for job #{job.id}: {job.title}", user_id=user.id)
         return {
             "id": resume.id,
             "docx": result["docx"],
@@ -724,12 +785,14 @@ def api_cover_letter(job_id: int):
 
 
 @router.post("/jobs/{job_id}/interview-prep")
-def api_interview_prep(job_id: int):
+def api_interview_prep(request: Request, job_id: int):
+    user = get_current_user(request)
     with session_scope() as session:
         job = session.get(Job, job_id)
-        if job is None:
+        if job is None or user_job_score(session, user.id, job_id) is None:
             raise HTTPException(404, "Job not found")
-        breakdown = json.loads(job.score_breakdown) if job.score_breakdown else []
+        score = user_job_score(session, user.id, job_id)
+        breakdown = json.loads(score.score_breakdown) if score and score.score_breakdown else []
         prep = build_interview_prep(
             job_title=job.title,
             company=job.company.name if job.company else "",
@@ -737,19 +800,22 @@ def api_interview_prep(job_id: int):
             location=job.location or "",
             score_breakdown=breakdown,
         )
-        row = InterviewPrep(job_id=job.id, content_json=prep["content_json"])
+        row = InterviewPrep(user_id=user.id, job_id=job.id, content_json=prep["content_json"])
         session.add(row)
         session.flush()
-        log_activity(session, "app", f"Interview prep generated for job #{job.id}")
+        log_activity(session, "app", f"Interview prep generated for job #{job.id}", user_id=user.id)
         prep["id"] = row.id
         return prep
 
 
 @router.get("/jobs/{job_id}/interview-prep")
-def api_get_interview_prep(job_id: int, db: Session = Depends(get_db)):
+def api_get_interview_prep(request: Request, job_id: int, db: Session = Depends(get_db)):
+    user = get_current_user(request)
     row = (
         db.execute(
-            select(InterviewPrep).where(InterviewPrep.job_id == job_id).order_by(InterviewPrep.created_at.desc())
+            select(InterviewPrep)
+            .where(InterviewPrep.job_id == job_id, InterviewPrep.user_id == user.id)
+            .order_by(InterviewPrep.created_at.desc())
         )
         .scalars()
         .first()
@@ -763,8 +829,15 @@ def api_get_interview_prep(job_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/resumes")
-def api_resumes(db: Session = Depends(get_db)):
-    rows = db.execute(select(Resume).order_by(Resume.created_at.desc())).scalars().all()
+def api_resumes(request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request)
+    rows = (
+        db.execute(
+            select(Resume).where(Resume.user_id == user.id).order_by(Resume.created_at.desc())
+        )
+        .scalars()
+        .all()
+    )
     return [
         {
             "id": r.id,
@@ -780,8 +853,9 @@ def api_resumes(db: Session = Depends(get_db)):
 
 
 @router.get("/resumes/{resume_id}/download")
-def api_download_resume(resume_id: int, fmt: str = "docx", db: Session = Depends(get_db)):
-    resume = db.get(Resume, resume_id)
+def api_download_resume(request: Request, resume_id: int, fmt: str = "docx", db: Session = Depends(get_db)):
+    user = get_current_user(request)
+    resume = resume_owned(db, resume_id, user.id)
     if resume is None:
         raise HTTPException(404, "Resume not found")
     path = resume.pdf_path if fmt == "pdf" else resume.file_path
@@ -834,5 +908,12 @@ def api_test_notifications():
 
 
 @router.get("/analytics")
-def api_analytics(db: Session = Depends(get_db)):
-    return compute_analytics(db)
+def api_analytics(request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request)
+    return compute_analytics(db, user_id=user.id)
+
+
+@router.get("/admin/users")
+def api_admin_users(request: Request):
+    require_admin(request)
+    return {"users": list_users(), "max_users": max_users(), "user_count": user_count()}

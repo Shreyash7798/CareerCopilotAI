@@ -28,6 +28,7 @@
     <a href="/profile" class="{{ 'on' if active == 'profile' }}">Profile</a>
     <a href="/settings" class="{{ 'on' if active == 'settings' }}">Settings</a>
     <a href="/activity" class="{{ 'on' if active == 'activity' }}">Activity</a>
+    {% if is_admin|default(false) %}<a href="/admin/users" class="{{ 'on' if active == 'admin' }}">Users</a>{% endif %}
   </nav>
   <main class="content">
     {% block content %}{% endblock %}

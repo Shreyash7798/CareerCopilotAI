@@ -43,6 +43,9 @@ def init_db() -> None:
     Base.metadata.create_all(engine)
     _configure_sqlite(engine)
     _auto_migrate(engine)
+    from app.migrate_users import bootstrap_users_if_needed
+
+    bootstrap_users_if_needed()
 
 
 def _configure_sqlite(engine) -> None:

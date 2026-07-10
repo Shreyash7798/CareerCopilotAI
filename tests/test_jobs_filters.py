@@ -7,7 +7,9 @@ from fastapi.testclient import TestClient
 
 import app.db as db_mod
 from app.main import app
+from app.models import User
 from app.routers.pages import _location_tokens
+from app.users import COOKIE_NAME, create_session_token
 
 
 @pytest.fixture()
@@ -16,7 +18,10 @@ def client_db(tmp_path, monkeypatch):
     monkeypatch.setattr(db_mod, "_engine", None)
     monkeypatch.setattr(db_mod, "_SessionLocal", None)
     db_mod.init_db()
+    with db_mod.session_scope() as session:
+        admin_id = session.query(User).one().id
     with TestClient(app) as client:
+        client.cookies.set(COOKIE_NAME, create_session_token(admin_id))
         yield client
 
 

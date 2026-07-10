@@ -16,9 +16,9 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
-from app.models import Company
+from app.models import Company, UserCompanyMonitor
 
 # ats_type -> (connector type, default ats_config)
 ATS_DEFAULTS: dict[str, tuple[str, dict]] = {
@@ -68,25 +68,78 @@ def keywords_list(company: Company) -> list[str]:
     return [k.strip().lower() for k in company.keywords.split(",") if k.strip()]
 
 
-def is_due(company: Company, now: datetime | None = None) -> bool:
-    """Per-company refresh interval: skip companies polled too recently."""
-    if not company.refresh_interval_minutes or not company.last_run_at:
+def is_due(company: Company, now: datetime | None = None, session=None) -> bool:
+    """Per-company refresh interval from the shortest active monitor interval."""
+    interval = company.refresh_interval_minutes
+    if session is not None:
+        monitors = session.execute(
+            select(UserCompanyMonitor).where(
+                UserCompanyMonitor.company_id == company.id,
+                UserCompanyMonitor.enabled.is_(True),
+            )
+        ).scalars()
+        intervals = [
+            m.refresh_interval_minutes or company.refresh_interval_minutes
+            for m in monitors
+            if (m.refresh_interval_minutes or company.refresh_interval_minutes)
+        ]
+        if intervals:
+            interval = min(intervals)
+    if not interval or not company.last_run_at:
         return True
     now = now or datetime.now(timezone.utc).replace(tzinfo=None)
     elapsed_min = (now - company.last_run_at).total_seconds() / 60
-    return elapsed_min >= company.refresh_interval_minutes
+    return elapsed_min >= interval
 
 
 def source_companies(session) -> list[Company]:
-    """Enabled companies with ATS config, oldest-checked first for fair rotation."""
+    """Companies with at least one enabled user monitor, oldest-checked first."""
+    any_monitors = (
+        session.execute(select(func.count(UserCompanyMonitor.id))).scalar() or 0
+    ) > 0
+    if any_monitors:
+        monitored_ids = (
+            session.execute(
+                select(UserCompanyMonitor.company_id)
+                .where(UserCompanyMonitor.enabled.is_(True))
+                .group_by(UserCompanyMonitor.company_id)
+            )
+            .scalars()
+            .all()
+        )
+        if not monitored_ids:
+            return []
+        return (
+            session.execute(
+                select(Company)
+                .where(Company.ats_type.isnot(None), Company.id.in_(monitored_ids))
+                .order_by(Company.last_run_at.asc().nulls_first(), Company.name)
+            )
+            .scalars()
+            .all()
+        )
     return (
         session.execute(
             select(Company)
-            .where(Company.ats_type.isnot(None))
+            .where(Company.ats_type.isnot(None), Company.enabled.is_(True))
             .order_by(Company.last_run_at.asc().nulls_first(), Company.name)
         )
         .scalars()
         .all()
+    )
+
+
+def enabled_source_count(session) -> int:
+    return (
+        session.execute(
+            select(func.count(func.distinct(UserCompanyMonitor.company_id))).where(
+                UserCompanyMonitor.enabled.is_(True),
+                UserCompanyMonitor.company_id.in_(
+                    select(Company.id).where(Company.ats_type.isnot(None))
+                ),
+            )
+        ).scalar()
+        or 0
     )
 
 

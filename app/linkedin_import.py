@@ -11,11 +11,12 @@ from app.db import session_scope
 from app.dedup import dedup_key, is_fuzzy_duplicate
 from app.models import Company, Job, log_activity
 from app.normalize import normalize
+from app.pipeline import _score_job_for_users
 from app.scoring import load_scoring_profile, score_jd_fit, score_job
 from app.sources.linkedin import parse_job_url
 
 
-def import_linkedin_job(url: str) -> dict:
+def import_linkedin_job(url: str, user_id: int | None = None) -> dict:
     """Fetch, score, and store one LinkedIn job. Returns summary dict."""
     raw = parse_job_url(url.strip())
     raw = normalize(raw)
@@ -23,9 +24,8 @@ def import_linkedin_job(url: str) -> dict:
         raise ValueError("Could not parse job title from LinkedIn URL")
 
     settings = get_settings(refresh=True)
-    profile = load_scoring_profile()
+    profile = load_scoring_profile(user_id)
     scoring_cfg = settings.get("scoring", {}) or {}
-    threshold = float(scoring_cfg.get("high_priority_threshold", 70))
     key = dedup_key(raw.company, raw.title, raw.location)
 
     with session_scope() as session:
@@ -72,43 +72,6 @@ def import_linkedin_job(url: str) -> dict:
         if is_fuzzy_duplicate(raw.title, titles):
             raise ValueError("A similar job already exists for this company")
 
-        score, components = score_job(
-            title=raw.title,
-            description=raw.description,
-            location=raw.location,
-            company=raw.company,
-            profile=profile,
-            scoring_cfg=scoring_cfg,
-        )
-        jd_score, jd_components = score_jd_fit(
-            title=raw.title,
-            description=raw.description,
-            company=raw.company,
-            profile=profile,
-            scoring_cfg=scoring_cfg,
-        )
-        breakdown = json.dumps(
-            [
-                {
-                    "name": c.name,
-                    "score": round(c.score, 3),
-                    "weight": round(c.weight, 3),
-                    "reason": c.reason,
-                }
-                for c in components
-            ]
-        )
-        jd_breakdown = json.dumps(
-            [
-                {
-                    "name": c.name,
-                    "score": round(c.score, 3),
-                    "weight": round(c.weight, 3),
-                    "reason": c.reason,
-                }
-                for c in jd_components
-            ]
-        )
         job = Job(
             company_id=company.id,
             title=raw.title,
@@ -119,21 +82,18 @@ def import_linkedin_job(url: str) -> dict:
             external_id=raw.external_id,
             dedup_key=key,
             posted_at=raw.posted_at,
-            match_score=score,
-            score_breakdown=breakdown,
-            jd_fit_score=jd_score,
-            jd_fit_breakdown=jd_breakdown,
-            is_high_priority=score >= threshold,
         )
         session.add(job)
         session.flush()
+        _score_job_for_users(session, job, company.id)
+        score_row = job.match_score
         log_activity(session, "discovery", f"LinkedIn job imported: {job.title} @ {raw.company}")
         return {
             "status": "created",
             "job_id": job.id,
             "title": job.title,
             "company": raw.company,
-            "match_score": round(score, 1),
-            "jd_fit_score": round(jd_score, 1),
+            "match_score": round(score_row, 1),
+            "jd_fit_score": round(job.jd_fit_score, 1),
             "is_high_priority": job.is_high_priority,
         }

@@ -17,12 +17,15 @@
       {% if error %}<p class="small" style="color: var(--bad);">{{ error }}</p>{% endif %}
       <form method="post" action="/login">
         <input type="hidden" name="next" value="{{ next_path }}">
+        <label class="f">Email
+          <input type="email" name="email" autofocus required autocomplete="username">
+        </label>
         <label class="f">Password
-          <input type="password" name="password" autofocus required autocomplete="current-password">
+          <input type="password" name="password" required autocomplete="current-password">
         </label>
         <button class="btn btn-accent" type="submit">Sign in</button>
       </form>
-      <p class="small muted mt">Password is set in <code>config/settings.yaml</code> (<code>app.auth_password</code>) on the server.</p>
+      <p class="small muted mt">Your account is created by the administrator. Contact them if you need access.</p>
     </div>
   </main>
 </body>

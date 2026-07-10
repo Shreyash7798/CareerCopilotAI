@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}User management · CareerCopilot AI{% endblock %}
+{% block content %}
+<h1>User management</h1>
+<p class="muted small">{{ user_count }} of {{ max_users }} accounts used. Members see only their own data.</p>
+{% if error %}<p class="small" style="color: var(--bad);">{{ error }}</p>{% endif %}
+
+<div class="card">
+  <h2>Accounts</h2>
+  <table class="data-table">
+    <thead>
+      <tr><th>Email</th><th>Name</th><th>Role</th><th>Status</th><th>CV</th><th>Last login</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td>{{ u.email }}</td>
+        <td>{{ u.display_name }}</td>
+        <td>{{ u.role }}</td>
+        <td>{{ 'Active' if u.is_active else 'Disabled' }}</td>
+        <td>{{ 'Yes' if u.has_cv else 'No' }}</td>
+        <td class="small muted">{{ u.last_login_at or '—' }}</td>
+        <td>
+          {% if u.id != current_user.id %}
+          <form class="inline-form" method="post" action="/admin/users/{{ u.id }}/toggle">
+            <button class="btn btn-sm" type="submit">{{ 'Disable' if u.is_active else 'Enable' }}</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if user_count < max_users %}
+<div class="card">
+  <h2>Create account</h2>
+  <form method="post" action="/admin/users/create">
+    <label class="f">Email <input type="email" name="email" required></label>
+    <label class="f">Display name <input type="text" name="display_name"></label>
+    <label class="f">Temporary password <input type="password" name="password" required minlength="8"></label>
+    <label class="f">Role
+      <select name="role">
+        <option value="member">Member (dashboard only)</option>
+        <option value="admin">Admin</option>
+      </select>
+    </label>
+    <button class="btn btn-accent" type="submit">Create user</button>
+  </form>
+</div>
+{% else %}
+<p class="muted">User limit reached ({{ max_users }} accounts).</p>
+{% endif %}
+
+<div class="card">
+  <h2>Reset password</h2>
+  <form method="post" action="/admin/users/0/password" id="reset-form">
+    <label class="f">User
+      <select id="reset-user" onchange="document.getElementById('reset-form').action='/admin/users/'+this.value+'/password'">
+        {% for u in users %}
+        <option value="{{ u.id }}">{{ u.email }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="f">New password <input type="password" name="new_password" required minlength="8"></label>
+    <button class="btn" type="submit">Reset password</button>
+  </form>
+</div>
+{% endblock %}

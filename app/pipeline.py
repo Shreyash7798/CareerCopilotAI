@@ -18,13 +18,21 @@ from app.config import get_settings, get_sources_config, sources_yaml_exists
 from app.db import session_scope
 from app.dedup import dedup_key, is_fuzzy_duplicate
 from app.exporter import export_excel, export_google_sheets
-from app.models import Application, Company, Job, Recruiter, log_activity
+from app.models import Application, Company, Job, User, UserCompanyMonitor, log_activity
 from app.normalize import normalize, passes_filters
 from app.job_visibility import is_aged_out, visibility_settings
 from app.recruiter_discovery import upsert_recruiters
-from app.scoring import load_scoring_profile, score_jd_fit, score_job
+from app.scoring import score_jd_fit, score_job
 from app.sources import REGISTRY
 from app.sources.base import RawJob
+from app.user_access import (
+    active_user_ids,
+    keywords_for_monitor,
+    scoring_context_for_user,
+    title_matches_keywords,
+    upsert_user_job_score,
+    user_ids_monitoring_company,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -116,18 +124,9 @@ def _run_entry(entry: dict, result: PipelineResult) -> list[RawJob]:
 
 def _discover_raw_jobs(
     result: PipelineResult,
-) -> tuple[list[RawJob], dict[str, list[str]], dict[str, dict]]:
-    """Discover jobs from database-configured companies.
-
-    Companies (with ats_type set) are the primary configuration:
-        Dashboard -> Company table -> Discovery pipeline
-    A legacy sources.yaml, if present, is imported into the table once on the
-    first run after upgrading, so existing installs migrate automatically.
-
-    Returns (raw jobs, per-company keyword filters, per-company run info).
-    """
+) -> tuple[list[RawJob], dict[str, dict]]:
+    """Discover jobs from companies monitored by any user."""
     raw_jobs: list[RawJob] = []
-    keyword_map: dict[str, list[str]] = {}
     run_info: dict[str, dict] = {}
 
     with session_scope() as session:
@@ -147,21 +146,23 @@ def _discover_raw_jobs(
     max_sources = _max_sources_per_run()
     polled = 0
 
+    with session_scope() as session:
+        companies = list(company_sources.source_companies(session))
+
     for company in companies:
-        if not company.enabled:
-            continue
-        if not company_sources.is_due(company, now):
-            result.sources_skipped += 1
-            continue
+        with session_scope() as session:
+            db_company = session.get(Company, company.id)
+            if db_company is None:
+                continue
+            if not company_sources.is_due(db_company, now, session=session):
+                result.sources_skipped += 1
+                continue
         if polled >= max_sources:
             result.sources_skipped += 1
             continue
         entry = company_sources.entry_from_company(company)
         if entry is None:
             continue
-        kws = company_sources.keywords_list(company)
-        if kws:
-            keyword_map[company.name.lower()] = kws
         failures_before = result.sources_failed
         fetched = _run_entry(entry, result)
         raw_jobs.extend(fetched)
@@ -185,21 +186,13 @@ def _discover_raw_jobs(
                 db_company.last_run_status = status
 
     result.fetched = len(raw_jobs)
-    return raw_jobs, keyword_map, run_info
+    return raw_jobs, run_info
 
 
 def utcnow_naive():
     from datetime import datetime, timezone
 
     return datetime.now(timezone.utc).replace(tzinfo=None)
-
-
-def _passes_company_keywords(raw: RawJob, keyword_map: dict[str, list[str]]) -> bool:
-    kws = keyword_map.get(raw.company.lower())
-    if not kws:
-        return True
-    title = raw.title.lower()
-    return any(k in title for k in kws)
 
 
 def _score_breakdown_json(components) -> str:
@@ -216,52 +209,92 @@ def _score_breakdown_json(components) -> str:
     )
 
 
-def rescore_all_jobs() -> int:
-    """Re-score every stored job against the current profile and weights.
-
-    Called after a CV upload or profile change so existing discoveries
-    re-rank for the new user/preferences instead of keeping stale scores.
-    Does not re-trigger notifications. Returns the number of jobs rescored.
-    """
-    settings = get_settings(refresh=True)
-    profile = load_scoring_profile()
-    scoring_cfg = settings.get("scoring", {}) or {}
-    threshold = float(scoring_cfg.get("high_priority_threshold", 70))
-
-    count = 0
-    with session_scope() as session:
-        for job in session.execute(select(Job)).scalars():
-            score, components = score_job(
-                title=job.title,
-                description=job.description or "",
-                location=job.location or "",
-                company=job.company.name if job.company else "",
-                profile=profile,
-                scoring_cfg=scoring_cfg,
+def _score_job_for_users(session, job: Job, company_id: int | None) -> int:
+    """Score one job for every user monitoring its company. Returns high-priority count."""
+    user_ids = user_ids_monitoring_company(session, company_id) if company_id else active_user_ids(session)
+    if not user_ids:
+        user_ids = active_user_ids(session)
+    high = 0
+    monitors = {
+        m.user_id: m
+        for m in session.execute(
+            select(UserCompanyMonitor).where(
+                UserCompanyMonitor.company_id == company_id,
+                UserCompanyMonitor.user_id.in_(user_ids),
             )
-            jd_score, jd_components = score_jd_fit(
-                title=job.title,
-                description=job.description or "",
-                company=job.company.name if job.company else "",
-                profile=profile,
-                scoring_cfg=scoring_cfg,
-            )
+        ).scalars()
+    } if company_id else {}
+
+    for uid in user_ids:
+        user = session.get(User, uid)
+        if user is None or not user.is_active:
+            continue
+        monitor = monitors.get(uid)
+        if monitor is not None and not title_matches_keywords(job.title, keywords_for_monitor(monitor)):
+            continue
+        profile, scoring_cfg = scoring_context_for_user(user)
+        threshold = float(scoring_cfg.get("high_priority_threshold", 70))
+        score, components = score_job(
+            title=job.title,
+            description=job.description or "",
+            location=job.location or "",
+            company=job.company.name if job.company else "",
+            profile=profile,
+            scoring_cfg=scoring_cfg,
+        )
+        jd_score, jd_components = score_jd_fit(
+            title=job.title,
+            description=job.description or "",
+            company=job.company.name if job.company else "",
+            profile=profile,
+            scoring_cfg=scoring_cfg,
+        )
+        is_hp = score >= threshold
+        upsert_user_job_score(
+            session,
+            user_id=uid,
+            job_id=job.id,
+            match_score=score,
+            score_breakdown=_score_breakdown_json(components),
+            jd_fit_score=jd_score,
+            jd_fit_breakdown=_score_breakdown_json(jd_components),
+            is_high_priority=is_hp,
+        )
+        if is_hp:
+            high += 1
+        # Keep legacy Job columns in sync with the first active user's scores.
+        if uid == user_ids[0]:
             job.match_score = score
             job.score_breakdown = _score_breakdown_json(components)
             job.jd_fit_score = jd_score
             job.jd_fit_breakdown = _score_breakdown_json(jd_components)
-            job.is_high_priority = score >= threshold
+            job.is_high_priority = is_hp
+    return high
+
+
+def rescore_all_jobs(user_id: int | None = None) -> int:
+    """Re-score jobs for one user or all active users."""
+    count = 0
+    with session_scope() as session:
+        user_ids = [user_id] if user_id is not None else active_user_ids(session)
+        if not user_ids:
+            return 0
+        for job in session.execute(select(Job)).scalars():
+            _score_job_for_users(session, job, job.company_id)
             count += 1
-        log_activity(session, "scoring", f"Rescored {count} jobs against the current profile")
+        log_activity(
+            session,
+            "scoring",
+            f"Rescored {count} jobs for {len(user_ids)} user(s)",
+            user_id=user_id,
+        )
     return count
 
 
 def run_pipeline(notify: bool = True, export: bool = True) -> PipelineResult:
     """Run one full discovery cycle. Safe to call from the scheduler or API."""
     settings = get_settings(refresh=True)
-    profile = load_scoring_profile()
-    scoring_cfg = settings.get("scoring", {}) or {}
-    threshold = float(scoring_cfg.get("high_priority_threshold", 70))
+    default_profile = (settings.get("profile") or {})
     # Global filters come from a user-created sources.yaml only; the example
     # file's consulting-specific filters must not constrain other users.
     filters = (get_sources_config().get("filters") or {}) if sources_yaml_exists() else {}
@@ -272,7 +305,7 @@ def run_pipeline(notify: bool = True, export: bool = True) -> PipelineResult:
         due_count = sum(
             1
             for company in company_sources.source_companies(session)
-            if company.enabled and company_sources.is_due(company)
+            if company_sources.is_due(company, session=session)
         )
         log_activity(
             session,
@@ -280,10 +313,9 @@ def run_pipeline(notify: bool = True, export: bool = True) -> PipelineResult:
             f"Discovery started: {due_count} companies due",
         )
 
-    raw_jobs, keyword_map, run_info = _discover_raw_jobs(result)
+    raw_jobs, run_info = _discover_raw_jobs(result)
 
     with session_scope() as session:
-        # dedup_key -> (job id, is_active) so returning jobs can be reactivated
         existing_jobs = {
             key: (job_id, active)
             for key, job_id, active in session.execute(
@@ -296,8 +328,6 @@ def run_pipeline(notify: bool = True, export: bool = True) -> PipelineResult:
         ).all():
             titles_by_company.setdefault(company_name.lower(), []).append(title)
 
-        # Every key seen this run, per company (pre-filter, so filtered jobs
-        # still count as "still listed" and don't cause false deactivation).
         seen_keys_by_company: dict[str, set[str]] = {}
 
         for raw in raw_jobs:
@@ -308,9 +338,6 @@ def run_pipeline(notify: bool = True, export: bool = True) -> PipelineResult:
             seen_keys_by_company.setdefault(raw.company.lower(), set()).add(key)
 
             if not passes_filters(raw, filters):
-                result.filtered_out += 1
-                continue
-            if not _passes_company_keywords(raw, keyword_map):
                 result.filtered_out += 1
                 continue
 
@@ -333,22 +360,7 @@ def run_pipeline(notify: bool = True, export: bool = True) -> PipelineResult:
                 result.duplicates += 1
                 continue
 
-            score, components = score_job(
-                title=raw.title,
-                description=raw.description,
-                location=raw.location,
-                company=raw.company,
-                profile=profile,
-                scoring_cfg=scoring_cfg,
-            )
-            jd_score, jd_components = score_jd_fit(
-                title=raw.title,
-                description=raw.description,
-                company=raw.company,
-                profile=profile,
-                scoring_cfg=scoring_cfg,
-            )
-            company = _get_or_create_company(session, raw.company, profile)
+            company = _get_or_create_company(session, raw.company, default_profile)
             job = Job(
                 company_id=company.id,
                 title=raw.title,
@@ -359,19 +371,15 @@ def run_pipeline(notify: bool = True, export: bool = True) -> PipelineResult:
                 external_id=raw.external_id,
                 dedup_key=key,
                 posted_at=raw.posted_at,
-                match_score=score,
-                score_breakdown=_score_breakdown_json(components),
-                jd_fit_score=jd_score,
-                jd_fit_breakdown=_score_breakdown_json(jd_components),
-                is_high_priority=score >= threshold,
             )
             session.add(job)
             session.flush()
+            hp = _score_job_for_users(session, job, company.id)
             existing_jobs[key] = (job.id, True)
             company_titles.append(raw.title)
             result.new_jobs += 1
             result.new_job_ids.append(job.id)
-            if job.is_high_priority:
+            if hp > 0:
                 result.high_priority += 1
             if company.recruiter_search_enabled and job.description:
                 upsert_recruiters(
