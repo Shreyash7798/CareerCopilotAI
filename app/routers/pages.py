@@ -960,6 +960,39 @@ def company_catalog_add_sector(request: Request, sector: str = Form(...)):
     return RedirectResponse("/companies", status_code=303)
 
 
+@router.post("/companies/catalog/disable-sector")
+def company_catalog_disable_sector(request: Request, sector: str = Form(...)):
+    """Disable monitoring for every catalog company in a sector (this user only)."""
+    user = get_current_user(request)
+    catalog = get_company_catalog()
+    names: list[str] = []
+    for sec in catalog.get("sectors", []):
+        if sec.get("name") == sector:
+            names = [item.get("name") for item in sec.get("companies", []) if item.get("name")]
+            break
+    if not names:
+        return RedirectResponse("/companies?error=Unknown+sector", status_code=303)
+
+    disabled = 0
+    with session_scope() as session:
+        for name in names:
+            company = session.execute(select(Company).where(Company.name == name)).scalar_one_or_none()
+            if company is None:
+                continue
+            monitor = monitor_for_user(session, user.id, company.id)
+            if monitor is not None and monitor.enabled:
+                monitor.enabled = False
+                disabled += 1
+        log_activity(
+            session,
+            "config",
+            f"Catalog bulk disable: {disabled} companies in {sector}",
+            user_id=user.id,
+        )
+    refresh_discovery_schedule()
+    return RedirectResponse("/companies", status_code=303)
+
+
 @router.get("/analytics", response_class=HTMLResponse)
 def analytics_page(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request)
