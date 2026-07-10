@@ -122,6 +122,29 @@ def test_auth_middleware_blocks_and_allows(monkeypatch, tmp_path):
         assert client.get("/api/jobs").status_code == 200
 
 
+def test_dashboard_loads_after_login(monkeypatch, tmp_path):
+    """Regression: dashboard must not 500 after login (analytics is a dict)."""
+    monkeypatch.setattr(db_mod, "database_url", lambda: f"sqlite:///{tmp_path}/dash.db")
+    monkeypatch.setattr(db_mod, "_engine", None)
+    monkeypatch.setattr(db_mod, "_SessionLocal", None)
+    db_mod.init_db()
+
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+
+    app = create_app()
+    with TestClient(app, follow_redirects=False) as client:
+        login = client.post(
+            "/login",
+            data={"email": "admin@careercopilot.local", "password": "changeme123", "next": "/"},
+        )
+        assert login.status_code == 303
+        dash = client.get("/")
+        assert dash.status_code == 200
+        assert "Your journey" in dash.text or "Dashboard" in dash.text
+
+
 def test_session_token_roundtrip():
     token = create_session_token(42)
     from app.users import parse_session_token
