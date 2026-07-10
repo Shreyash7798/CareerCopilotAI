@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+from collections import defaultdict
 from dataclasses import dataclass, field
 
 from sqlalchemy import select
@@ -209,30 +210,93 @@ def _score_breakdown_json(components) -> str:
     )
 
 
-def _score_job_for_users(session, job: Job, company_id: int | None) -> int:
-    """Score one job for every user monitoring its company. Returns high-priority count."""
-    user_ids = user_ids_monitoring_company(session, company_id) if company_id else active_user_ids(session)
-    if not user_ids:
-        user_ids = active_user_ids(session)
-    high = 0
-    monitors = {
-        m.user_id: m
-        for m in session.execute(
-            select(UserCompanyMonitor).where(
-                UserCompanyMonitor.company_id == company_id,
-                UserCompanyMonitor.user_id.in_(user_ids),
-            )
-        ).scalars()
-    } if company_id else {}
+@dataclass
+class _ScoringCache:
+    """Preloaded users, monitors, and scoring context to avoid per-job DB round-trips."""
 
+    users: dict[int, User]
+    contexts: dict[int, tuple[dict, dict]]
+    monitors_by_company: dict[int, dict[int, UserCompanyMonitor]]
+    monitors_by_user: dict[int, set[int]]
+
+    @classmethod
+    def build(cls, session, *, user_id: int | None = None) -> _ScoringCache:
+        user_ids = [user_id] if user_id is not None else active_user_ids(session)
+        users: dict[int, User] = {}
+        contexts: dict[int, tuple[dict, dict]] = {}
+        for uid in user_ids:
+            user = session.get(User, uid)
+            if user is None or not user.is_active:
+                continue
+            users[uid] = user
+            contexts[uid] = scoring_context_for_user(user)
+
+        monitors_by_company: dict[int, dict[int, UserCompanyMonitor]] = defaultdict(dict)
+        monitors_by_user: dict[int, set[int]] = defaultdict(set)
+        if user_ids:
+            for monitor in session.execute(
+                select(UserCompanyMonitor).where(
+                    UserCompanyMonitor.enabled.is_(True),
+                    UserCompanyMonitor.user_id.in_(user_ids),
+                )
+            ).scalars():
+                monitors_by_company[monitor.company_id][monitor.user_id] = monitor
+                monitors_by_user[monitor.user_id].add(monitor.company_id)
+
+        return cls(
+            users=users,
+            contexts=contexts,
+            monitors_by_company=dict(monitors_by_company),
+            monitors_by_user=dict(monitors_by_user),
+        )
+
+    def user_ids_for_company(self, company_id: int | None) -> list[int]:
+        if company_id and company_id in self.monitors_by_company:
+            return [uid for uid in self.monitors_by_company[company_id] if uid in self.users]
+        return list(self.users.keys())
+
+
+def _score_job_for_users(
+    session,
+    job: Job,
+    company_id: int | None,
+    *,
+    cache: _ScoringCache | None = None,
+) -> int:
+    """Score one job for every user monitoring its company. Returns high-priority count."""
+    if cache is not None:
+        user_ids = cache.user_ids_for_company(company_id)
+        monitors = cache.monitors_by_company.get(company_id, {}) if company_id else {}
+    else:
+        user_ids = user_ids_monitoring_company(session, company_id) if company_id else active_user_ids(session)
+        if not user_ids:
+            user_ids = active_user_ids(session)
+        monitors = {
+            m.user_id: m
+            for m in session.execute(
+                select(UserCompanyMonitor).where(
+                    UserCompanyMonitor.company_id == company_id,
+                    UserCompanyMonitor.user_id.in_(user_ids),
+                )
+            ).scalars()
+        } if company_id else {}
+
+    high = 0
     for uid in user_ids:
-        user = session.get(User, uid)
-        if user is None or not user.is_active:
-            continue
+        if cache is not None:
+            user = cache.users.get(uid)
+            if user is None:
+                continue
+            profile, scoring_cfg = cache.contexts[uid]
+        else:
+            user = session.get(User, uid)
+            if user is None or not user.is_active:
+                continue
+            profile, scoring_cfg = scoring_context_for_user(user)
+
         monitor = monitors.get(uid)
         if monitor is not None and not title_matches_keywords(job.title, keywords_for_monitor(monitor)):
             continue
-        profile, scoring_cfg = scoring_context_for_user(user)
         threshold = float(scoring_cfg.get("high_priority_threshold", 70))
         score, components = score_job(
             title=job.title,
@@ -262,7 +326,6 @@ def _score_job_for_users(session, job: Job, company_id: int | None) -> int:
         )
         if is_hp:
             high += 1
-        # Keep legacy Job columns in sync with the first active user's scores.
         if uid == user_ids[0]:
             job.match_score = score
             job.score_breakdown = _score_breakdown_json(components)
@@ -276,16 +339,25 @@ def rescore_all_jobs(user_id: int | None = None) -> int:
     """Re-score jobs for one user or all active users."""
     count = 0
     with session_scope() as session:
-        user_ids = [user_id] if user_id is not None else active_user_ids(session)
-        if not user_ids:
+        cache = _ScoringCache.build(session, user_id=user_id)
+        if not cache.users:
             return 0
-        for job in session.execute(select(Job)).scalars():
-            _score_job_for_users(session, job, job.company_id)
+
+        if user_id is not None:
+            company_ids = list(cache.monitors_by_user.get(user_id, set()))
+            if not company_ids:
+                return 0
+            jobs = session.execute(select(Job).where(Job.company_id.in_(company_ids))).scalars()
+        else:
+            jobs = session.execute(select(Job)).scalars()
+
+        for job in jobs:
+            _score_job_for_users(session, job, job.company_id, cache=cache)
             count += 1
         log_activity(
             session,
             "scoring",
-            f"Rescored {count} jobs for {len(user_ids)} user(s)",
+            f"Rescored {count} jobs for {len(cache.users)} user(s)",
             user_id=user_id,
         )
     return count

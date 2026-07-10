@@ -48,6 +48,7 @@ from app.user_access import (
     apply_monitor_to_company,
     attach_user_scores,
     company_monitor_map,
+    company_page_stats,
     hydrate_job_from_score,
     monitor_for_user,
     sync_monitor_from_company,
@@ -621,39 +622,20 @@ def companies_page(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request)
     monitors = company_monitor_map(db, user.id)
     companies = db.execute(select(Company).order_by(Company.name)).scalars().all()
+    batch_stats, app_counts = company_page_stats(db, user.id)
     display_companies = []
     stats = {}
     for company in companies:
         monitor = monitors.get(company.id)
         display = apply_monitor_to_company(company, monitor)
         display_companies.append(display)
-        active_jobs = [j for j in company.jobs if j.is_active]
-        user_scores = {
-            s.job_id: s
-            for s in db.execute(
-                select(UserJobScore).where(
-                    UserJobScore.user_id == user.id,
-                    UserJobScore.job_id.in_([j.id for j in active_jobs] or [0]),
-                )
-            ).scalars()
-        }
-        scored_jobs = [hydrate_job_from_score(j, user_scores[j.id]) for j in active_jobs if j.id in user_scores]
-        applied = db.execute(
-            select(func.count(Application.id)).where(
-                Application.company_name == company.name,
-                Application.user_id == user.id,
-            )
-        ).scalar() or 0
+        base = batch_stats.get(company.id, {})
         stats[company.id] = {
-            "active_jobs": len(scored_jobs),
-            "high_priority": sum(1 for j in scored_jobs if j.is_high_priority),
-            "top_locations": sorted(
-                {(j.location or "").split(",")[0].strip() for j in scored_jobs if j.location}
-            )[:4],
-            "applications": applied,
-            "avg_score": round(sum(j.match_score for j in scored_jobs) / len(scored_jobs), 1)
-            if scored_jobs
-            else 0,
+            "active_jobs": base.get("active_jobs", 0),
+            "high_priority": base.get("high_priority", 0),
+            "top_locations": base.get("top_locations", []),
+            "applications": app_counts.get(company.name, 0),
+            "avg_score": base.get("avg_score", 0),
             "ats_config": company_sources.parse_ats_config(company),
         }
     display_companies.sort(key=lambda c: (not c.enabled, (c.name or "").lower()))
