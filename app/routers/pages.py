@@ -353,6 +353,7 @@ def job_detail(request: Request, job_id: int, db: Session = Depends(get_db)):
     if job is None:
         return RedirectResponse("/jobs", status_code=303)
     breakdown = json.loads(job.score_breakdown) if job.score_breakdown else []
+    jd_breakdown = json.loads(job.jd_fit_breakdown) if job.jd_fit_breakdown else []
     resumes = (
         db.execute(select(Resume).where(Resume.job_id == job_id).order_by(Resume.created_at.desc()))
         .scalars()
@@ -399,6 +400,7 @@ def job_detail(request: Request, job_id: int, db: Session = Depends(get_db)):
             "active": "jobs",
             "job": job,
             "breakdown": breakdown,
+            "jd_breakdown": jd_breakdown,
             "resumes": tailored,
             "cover_letters": cover_letters,
             "interview_prep": interview_prep,

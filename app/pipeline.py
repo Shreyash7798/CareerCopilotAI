@@ -22,7 +22,7 @@ from app.models import Application, Company, Job, Recruiter, log_activity
 from app.normalize import normalize, passes_filters
 from app.job_visibility import is_aged_out, visibility_settings
 from app.recruiter_discovery import upsert_recruiters
-from app.scoring import score_job
+from app.scoring import load_scoring_profile, score_jd_fit, score_job
 from app.sources import REGISTRY
 from app.sources.base import RawJob
 
@@ -224,7 +224,7 @@ def rescore_all_jobs() -> int:
     Does not re-trigger notifications. Returns the number of jobs rescored.
     """
     settings = get_settings(refresh=True)
-    profile = settings.get("profile", {}) or {}
+    profile = load_scoring_profile()
     scoring_cfg = settings.get("scoring", {}) or {}
     threshold = float(scoring_cfg.get("high_priority_threshold", 70))
 
@@ -239,8 +239,17 @@ def rescore_all_jobs() -> int:
                 profile=profile,
                 scoring_cfg=scoring_cfg,
             )
+            jd_score, jd_components = score_jd_fit(
+                title=job.title,
+                description=job.description or "",
+                company=job.company.name if job.company else "",
+                profile=profile,
+                scoring_cfg=scoring_cfg,
+            )
             job.match_score = score
             job.score_breakdown = _score_breakdown_json(components)
+            job.jd_fit_score = jd_score
+            job.jd_fit_breakdown = _score_breakdown_json(jd_components)
             job.is_high_priority = score >= threshold
             count += 1
         log_activity(session, "scoring", f"Rescored {count} jobs against the current profile")
@@ -250,7 +259,7 @@ def rescore_all_jobs() -> int:
 def run_pipeline(notify: bool = True, export: bool = True) -> PipelineResult:
     """Run one full discovery cycle. Safe to call from the scheduler or API."""
     settings = get_settings(refresh=True)
-    profile = settings.get("profile", {}) or {}
+    profile = load_scoring_profile()
     scoring_cfg = settings.get("scoring", {}) or {}
     threshold = float(scoring_cfg.get("high_priority_threshold", 70))
     # Global filters come from a user-created sources.yaml only; the example
@@ -332,6 +341,13 @@ def run_pipeline(notify: bool = True, export: bool = True) -> PipelineResult:
                 profile=profile,
                 scoring_cfg=scoring_cfg,
             )
+            jd_score, jd_components = score_jd_fit(
+                title=raw.title,
+                description=raw.description,
+                company=raw.company,
+                profile=profile,
+                scoring_cfg=scoring_cfg,
+            )
             company = _get_or_create_company(session, raw.company, profile)
             job = Job(
                 company_id=company.id,
@@ -345,6 +361,8 @@ def run_pipeline(notify: bool = True, export: bool = True) -> PipelineResult:
                 posted_at=raw.posted_at,
                 match_score=score,
                 score_breakdown=_score_breakdown_json(components),
+                jd_fit_score=jd_score,
+                jd_fit_breakdown=_score_breakdown_json(jd_components),
                 is_high_priority=score >= threshold,
             )
             session.add(job)

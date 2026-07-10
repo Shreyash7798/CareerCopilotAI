@@ -11,7 +11,7 @@ from app.db import session_scope
 from app.dedup import dedup_key, is_fuzzy_duplicate
 from app.models import Company, Job, log_activity
 from app.normalize import normalize
-from app.scoring import score_job
+from app.scoring import load_scoring_profile, score_jd_fit, score_job
 from app.sources.linkedin import parse_job_url
 
 
@@ -23,7 +23,7 @@ def import_linkedin_job(url: str) -> dict:
         raise ValueError("Could not parse job title from LinkedIn URL")
 
     settings = get_settings(refresh=True)
-    profile = settings.get("profile", {}) or {}
+    profile = load_scoring_profile()
     scoring_cfg = settings.get("scoring", {}) or {}
     threshold = float(scoring_cfg.get("high_priority_threshold", 70))
     key = dedup_key(raw.company, raw.title, raw.location)
@@ -80,6 +80,13 @@ def import_linkedin_job(url: str) -> dict:
             profile=profile,
             scoring_cfg=scoring_cfg,
         )
+        jd_score, jd_components = score_jd_fit(
+            title=raw.title,
+            description=raw.description,
+            company=raw.company,
+            profile=profile,
+            scoring_cfg=scoring_cfg,
+        )
         breakdown = json.dumps(
             [
                 {
@@ -89,6 +96,17 @@ def import_linkedin_job(url: str) -> dict:
                     "reason": c.reason,
                 }
                 for c in components
+            ]
+        )
+        jd_breakdown = json.dumps(
+            [
+                {
+                    "name": c.name,
+                    "score": round(c.score, 3),
+                    "weight": round(c.weight, 3),
+                    "reason": c.reason,
+                }
+                for c in jd_components
             ]
         )
         job = Job(
@@ -103,6 +121,8 @@ def import_linkedin_job(url: str) -> dict:
             posted_at=raw.posted_at,
             match_score=score,
             score_breakdown=breakdown,
+            jd_fit_score=jd_score,
+            jd_fit_breakdown=jd_breakdown,
             is_high_priority=score >= threshold,
         )
         session.add(job)
@@ -114,5 +134,6 @@ def import_linkedin_job(url: str) -> dict:
             "title": job.title,
             "company": raw.company,
             "match_score": round(score, 1),
+            "jd_fit_score": round(jd_score, 1),
             "is_high_priority": job.is_high_priority,
         }

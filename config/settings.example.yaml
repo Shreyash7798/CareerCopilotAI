@@ -118,6 +118,12 @@ scoring:
   # Jobs scoring at or above this (0-100) are "high priority" and trigger
   # instant notifications.
   high_priority_threshold: 70
+  # JD fit: company requirements vs your background (no location/company preference bias).
+  jd_fit_weights:
+    jd_skills: 0.35
+    jd_experience: 0.30
+    jd_role: 0.20
+    jd_education: 0.15
   role_keywords:
     - consultant
     - consulting

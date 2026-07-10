@@ -105,6 +105,13 @@ table.list th { color: var(--muted); font-weight: 600; font-size: .78rem; text-t
 .score.hi { background: var(--good); }
 .score.mid { background: var(--warn); }
 .score.lo { background: #94a3b8; }
+.score.jd { background: #1d4ed8; }
+.score-pair { display: inline-flex; flex-direction: column; align-items: center; margin-right: 10px; vertical-align: middle; }
+.score-label, .score-sub { font-size: .62rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); line-height: 1; margin-top: 2px; }
+.score-dual { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 52px; }
+.score-dual .score { min-width: 36px; font-size: .85rem; }
+.score-dual .score-sub { font-size: .58rem; margin-top: 0; }
+.bar-jd > i { background: #3b82f6; }
 
 .badge {
   display: inline-block; font-size: .72rem; font-weight: 600; border-radius: 999px;

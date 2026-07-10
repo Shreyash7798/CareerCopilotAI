@@ -1,14 +1,21 @@
 """Deterministic, explainable match scoring (spec section 11).
 
-Every component returns a score in [0, 1] plus a human-readable reason.
-The final score is a weighted sum scaled to 0-100. No black boxes: the full
-breakdown is stored with each job and shown in the dashboard.
+Two complementary scores are stored per job:
+
+* **match_score** — how well the role fits *your preferences* (locations,
+  preferred companies, interests, configured role keywords).
+* **jd_fit_score** — how well *your background* matches what the company
+  asks for in the job description (skills, experience, role terms), without
+  preference bias.
 """
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
+
+from app.resume_engine import extract_keywords
 
 
 @dataclass
@@ -159,6 +166,163 @@ def score_job(
         ComponentScore("industry_fit", *score_industry_fit(title, description, profile), weight=norm["industry_fit"]),
         ComponentScore("skills_fit", *score_skills_fit(description, profile), weight=norm["skills_fit"]),
         ComponentScore("company_fit", *score_company_fit(company, profile), weight=norm["company_fit"]),
+    ]
+    total = round(sum(c.weighted for c in components) * 100, 1)
+    return total, components
+
+
+def load_scoring_profile() -> dict:
+    """Merge settings profile with parsed CV facts for scoring."""
+    from sqlalchemy import select
+
+    from app.config import get_profile
+    from app.db import session_scope
+    from app.models import UserProfile
+
+    profile = dict(get_profile())
+    with session_scope() as session:
+        row = session.execute(select(UserProfile)).scalars().first()
+        if row and row.profile_json:
+            try:
+                parsed = json.loads(row.profile_json)
+            except json.JSONDecodeError:
+                parsed = {}
+            if isinstance(parsed, dict):
+                if parsed.get("skills"):
+                    profile["skills"] = list(
+                        dict.fromkeys((profile.get("skills") or []) + parsed["skills"])
+                    )
+                if parsed.get("employers"):
+                    profile["employers"] = list(
+                        dict.fromkeys((profile.get("employers") or []) + parsed["employers"])
+                    )
+                for key in ("full_name", "email", "phone", "experience_years", "raw_text"):
+                    if parsed.get(key) and not profile.get(key):
+                        profile[key] = parsed[key]
+    return profile
+
+
+def _background_text(profile: dict) -> str:
+    parts = [
+        profile.get("current_employer") or "",
+        " ".join(profile.get("previous_employers") or []),
+        " ".join(profile.get("employers") or []),
+        " ".join(profile.get("skills") or []),
+        profile.get("cv_text") or profile.get("raw_text") or "",
+    ]
+    return "\n".join(parts).lower()
+
+
+def score_jd_skills_match(description: str, profile: dict) -> tuple[float, str]:
+    """Overlap between JD skill terms and the candidate's skills / CV background."""
+    jd_terms = extract_keywords(description or "", top_n=30)
+    if not jd_terms:
+        return 0.5, "Job description has little text to compare against your background"
+
+    background = _background_text(profile)
+    skills = [s.lower() for s in (profile.get("skills") or [])]
+    hits: list[str] = []
+    for term in jd_terms:
+        if term in background or any(term in skill for skill in skills):
+            hits.append(term)
+
+    ratio = len(hits) / len(jd_terms)
+    score = min(1.0, ratio * 1.4)
+    if hits:
+        return score, (
+            f"{len(hits)}/{len(jd_terms)} key JD terms match your background: "
+            f"{', '.join(hits[:8])}"
+        )
+    return 0.0, "None of the main JD skill terms appear in your skills or CV"
+
+
+def score_jd_role_alignment(title: str, description: str, profile: dict) -> tuple[float, str]:
+    """Whether your career background supports the role type described in the posting."""
+    role_terms = extract_keywords(f"{title}\n{(description or '')[:2000]}", top_n=20)
+    if not role_terms:
+        return 0.5, "Could not extract role terms from the posting"
+
+    background = _background_text(profile)
+    hits = [t for t in role_terms if t in background]
+    score = min(1.0, len(hits) / max(4, len(role_terms) * 0.45))
+    if hits:
+        return score, f"Your background reflects JD role themes: {', '.join(hits[:6])}"
+    return 0.15, "Your listed experience does not closely reflect this role type in the JD"
+
+
+def score_jd_experience_match(description: str, profile: dict) -> tuple[float, str]:
+    """Experience years vs what the JD states — company requirement, not preference."""
+    score, reason = score_experience_fit(description, profile)
+    return score, f"JD experience fit: {reason}"
+
+
+def score_jd_education_match(description: str, profile: dict) -> tuple[float, str]:
+    """Light check for degree / MBA requirements mentioned in the JD."""
+    text = (description or "").lower()
+    degree_terms = [
+        "mba",
+        "master",
+        "bachelor",
+        "b.tech",
+        "b.e.",
+        "engineering degree",
+        "ca ",
+        "chartered accountant",
+    ]
+    mentioned = [t.strip() for t in degree_terms if t in text]
+    if not mentioned:
+        return 0.6, "JD does not state a specific education requirement"
+
+    background = _background_text(profile)
+    cv_hits = [t for t in mentioned if t in background]
+    if cv_hits:
+        return 1.0, f"JD mentions education ({', '.join(cv_hits[:3])}) and your CV/profile reflects it"
+    return 0.35, f"JD mentions education ({', '.join(mentioned[:3])}) — not found in your stored profile/CV"
+
+
+def score_jd_fit(
+    *,
+    title: str,
+    description: str,
+    company: str,
+    profile: dict | None = None,
+    scoring_cfg: dict | None = None,
+) -> tuple[float, list[ComponentScore]]:
+    """Return JD-centric fit (0-100): company requirements vs your background."""
+    profile = profile or load_scoring_profile()
+    scoring_cfg = scoring_cfg or {}
+    weights = (scoring_cfg.get("jd_fit_weights") or {}) if scoring_cfg else {}
+    defaults = {
+        "jd_skills": 0.35,
+        "jd_experience": 0.30,
+        "jd_role": 0.20,
+        "jd_education": 0.15,
+    }
+    merged = {k: float(weights.get(k, v)) for k, v in defaults.items()}
+    total_weight = sum(merged.values()) or 1.0
+    norm = {k: v / total_weight for k, v in merged.items()}
+
+    components = [
+        ComponentScore(
+            "jd_skills",
+            *score_jd_skills_match(description, profile),
+            weight=norm["jd_skills"],
+        ),
+        ComponentScore(
+            "jd_experience",
+            *score_jd_experience_match(description, profile),
+            weight=norm["jd_experience"],
+        ),
+        ComponentScore(
+            "jd_role",
+            *score_jd_role_alignment(title, description, profile),
+            weight=norm["jd_role"],
+        ),
+        ComponentScore(
+            "jd_education",
+            *score_jd_education_match(description, profile),
+            weight=norm["jd_education"],
+        ),
     ]
     total = round(sum(c.weighted for c in components) * 100, 1)
     return total, components
