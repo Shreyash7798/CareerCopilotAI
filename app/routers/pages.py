@@ -931,9 +931,18 @@ def company_catalog_add(request: Request, sector: str = Form(...), name: str = F
 
 @router.post("/companies/catalog/add-sector")
 def company_catalog_add_sector(request: Request, sector: str = Form(...)):
+    """Enable every catalog company in a sector for this user.
+
+    Companies already configured in the DB (by any user) still get a monitor
+    created/enabled for THIS user — previously they were skipped, which made
+    'Add all' a silent no-op and left 'Disable all' with nothing to disable.
+    """
+    from app.user_access import ensure_monitor
+
     user = get_current_user(request)
     catalog = get_company_catalog()
     added = 0
+    enabled_for_user = 0
     with session_scope() as session:
         for sec in catalog.get("sectors", []):
             if sec.get("name") != sector:
@@ -945,7 +954,14 @@ def company_catalog_add_sector(request: Request, sector: str = Form(...)):
                 company = session.execute(
                     select(Company).where(Company.name == name)
                 ).scalar_one_or_none()
+                caveat = item.get("caveat")
                 if company is not None and company.ats_type:
+                    # Existing connector — just enable it for this user
+                    # (bot-protected entries stay opt-in).
+                    if not caveat:
+                        monitor = ensure_monitor(session, user.id, company, enabled=True)
+                        if monitor is not None:
+                            enabled_for_user += 1
                     continue
                 if company is None:
                     company = Company(name=name)
@@ -957,11 +973,16 @@ def company_catalog_add_sector(request: Request, sector: str = Form(...)):
                 company.ats_config = (
                     json.dumps(item["ats_config"]) if item.get("ats_config") else None
                 )
-                company.enabled = not item.get("caveat")
-                company.notes = item.get("caveat") or company.notes
+                company.enabled = not caveat
+                company.notes = caveat or company.notes
                 sync_monitor_from_company(session, user.id, company)
                 added += 1
-            log_activity(session, "config", f"Catalog bulk add: {added} companies from {sector}", user_id=user.id)
+            log_activity(
+                session,
+                "config",
+                f"Catalog bulk add: {added} new + {enabled_for_user} enabled for you in {sector}",
+                user_id=user.id,
+            )
             break
     refresh_discovery_schedule()
     return RedirectResponse("/companies", status_code=303)
