@@ -99,10 +99,12 @@ def _job_dict(job: Job) -> dict:
         "url": job.url,
         "source": job.source,
         "match_score": job.match_score,
+        "jd_fit_score": job.jd_fit_score,
         "is_high_priority": job.is_high_priority,
         "posted_at": job.posted_at.isoformat() if job.posted_at else None,
         "discovered_at": job.discovered_at.isoformat() if job.discovered_at else None,
         "score_breakdown": json.loads(job.score_breakdown) if job.score_breakdown else [],
+        "jd_fit_breakdown": json.loads(job.jd_fit_breakdown) if job.jd_fit_breakdown else [],
     }
     data.update(job_age_dict(job))
     return data

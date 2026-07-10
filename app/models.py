@@ -101,7 +101,9 @@ class Job(Base):
     posted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     discovered_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
     match_score: Mapped[float] = mapped_column(Float, default=0.0, index=True)
-    score_breakdown: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON
+    score_breakdown: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON — preference fit
+    jd_fit_score: Mapped[float] = mapped_column(Float, default=0.0, index=True)
+    jd_fit_breakdown: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON — JD vs background
     is_high_priority: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     notified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

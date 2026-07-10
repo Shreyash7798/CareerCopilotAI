@@ -73,3 +73,34 @@ def test_score_job_deterministic_and_explainable():
     assert all(c.reason for c in comps1)  # explainable
     # weights normalized
     assert abs(sum(c.weight for c in comps1) - 1.0) < 1e-9
+
+
+def test_score_jd_fit_ignores_location_preference():
+    """JD fit should not penalize Berlin if skills/experience match."""
+    from app.scoring import score_jd_fit
+
+    kwargs = dict(
+        title="Operations Consultant",
+        description="3-5 years experience in supply chain, strategy, and Excel required.",
+        company="Acme Consulting",
+        profile=PROFILE,
+        scoring_cfg=SCORING_CFG,
+    )
+    jd_score, comps = score_jd_fit(**kwargs)
+    assert 0 <= jd_score <= 100
+    assert jd_score >= 50
+    assert len(comps) == 4
+    assert all("location" not in c.name for c in comps)
+
+
+def test_score_jd_fit_rewards_skill_overlap():
+    from app.scoring import score_jd_fit
+
+    jd_score, _ = score_jd_fit(
+        title="Supply Chain Consultant",
+        description="Supply chain optimization, Excel, stakeholder management, 3 years experience.",
+        company="Firm",
+        profile=PROFILE,
+        scoring_cfg=SCORING_CFG,
+    )
+    assert jd_score >= 60
