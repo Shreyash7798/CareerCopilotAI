@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections import defaultdict
 from typing import Any
 
 from sqlalchemy import and_, func, select
@@ -244,6 +245,42 @@ def company_monitor_map(session: Session, user_id: int) -> dict[int, UserCompany
         select(UserCompanyMonitor).where(UserCompanyMonitor.user_id == user_id)
     ).scalars()
     return {m.company_id: m for m in rows}
+
+
+def company_page_stats(session: Session, user_id: int) -> tuple[dict[int, dict], dict[str, int]]:
+    """Batch-load per-company job stats and application counts (avoids N+1 queries)."""
+    rows = session.execute(
+        select(Job.company_id, UserJobScore, Job)
+        .join(
+            UserJobScore,
+            and_(UserJobScore.job_id == Job.id, UserJobScore.user_id == user_id),
+        )
+        .where(Job.is_active.is_(True), Job.company_id.isnot(None))
+    ).all()
+
+    jobs_by_company: dict[int, list[Job]] = defaultdict(list)
+    for company_id, score, job in rows:
+        jobs_by_company[company_id].append(hydrate_job_from_score(job, score))
+
+    app_counts = dict(
+        session.execute(
+            select(Application.company_name, func.count(Application.id))
+            .where(Application.user_id == user_id)
+            .group_by(Application.company_name)
+        ).all()
+    )
+
+    stats: dict[int, dict] = {}
+    for company_id, scored_jobs in jobs_by_company.items():
+        stats[company_id] = {
+            "active_jobs": len(scored_jobs),
+            "high_priority": sum(1 for j in scored_jobs if j.is_high_priority),
+            "top_locations": sorted(
+                {(j.location or "").split(",")[0].strip() for j in scored_jobs if j.location}
+            )[:4],
+            "avg_score": round(sum(j.match_score for j in scored_jobs) / len(scored_jobs), 1),
+        }
+    return stats, app_counts
 
 
 def apply_monitor_to_company(company: Company, monitor: UserCompanyMonitor | None) -> Company:

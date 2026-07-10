@@ -114,12 +114,13 @@ def bootstrap_starter_pack_for_user(session, user_id: int) -> int:
     """Load starter companies and enable monitors for one user only."""
     from app.user_access import ensure_monitor
 
-    bootstrap_starter_pack(session)
     enabled = 0
     for item in _load_starter_pack():
         entry = _catalog_entry(item.get("sector", ""), item.get("name", ""))
         if entry is None:
             continue
+        if _apply_catalog_entry(session, entry):
+            pass
         company = session.execute(
             select(Company).where(Company.name == entry["name"])
         ).scalar_one_or_none()
