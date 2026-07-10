@@ -6,27 +6,32 @@
 {% set setup_pct = (setup_done * 50)|int %}
 {% set shown = recent_high if recent_high else recent_top %}
 {% set total_bucket = analytics.score_buckets.high + analytics.score_buckets.medium + analytics.score_buckets.low %}
-{% if discovery_mins >= 60 %}
-  {% set hrs = discovery_mins // 60 %}
-  {% set mins_rem = discovery_mins % 60 %}
-  {% if mins_rem == 0 %}
-    {% set discovery_label = ('every hour' if hrs == 1 else 'every ' ~ hrs ~ ' hours') %}
-  {% else %}
-    {% set discovery_label = 'every ' ~ hrs ~ 'h ' ~ mins_rem ~ 'm' %}
-  {% endif %}
-{% else %}
-  {% set discovery_label = 'every ' ~ discovery_mins ~ ' min' %}
-{% endif %}
+{% set discovery_label = discovery.user_interval_label %}
+{% set target_polls = discovery.target_polls_per_company_per_day %}
 
 <section class="dash-hero">
   <div class="dash-hero-text">
     <p class="dash-eyebrow">Your job search command center</p>
     <h1 class="dash-title">{% if display_name %}Hi, {{ display_name }}{% else %}Dashboard{% endif %}</h1>
     <p class="dash-sub">
-      Discovery runs <strong>{{ discovery_label }}</strong>
-      {% if monitored_count %}· monitoring <strong>{{ monitored_count }}</strong> companies{% endif %}
-      {% if analytics.jobs_last_7_days %}· <strong>{{ analytics.jobs_last_7_days }}</strong> new this week{% endif %}
+      {% if monitored_count %}
+      <strong>{{ monitored_count }}</strong> {{ 'company' if monitored_count == 1 else 'companies' }}
+      · each checked ~<strong>{{ target_polls }}×</strong> per day
+      {% if discovery.shared_server and discovery.global_discovery_interval_minutes < discovery.user_discovery_interval_minutes %}
+      · server runs <strong>{{ discovery.global_interval_label }}</strong>
+      {% else %}
+      · checks run <strong>{{ discovery_label }}</strong>
+      {% endif %}
+      {% else %}
+      Enable companies on <a href="/companies" style="color:#93c5fd">Companies</a> to start discovery
+      {% endif %}
+      {% if analytics.jobs_last_7_days %}· <strong>{{ analytics.jobs_last_7_days }}</strong> new for you this week{% endif %}
     </p>
+    {% if discovery.shared_server and monitored_count and discovery.global_discovery_interval_minutes < discovery.user_discovery_interval_minutes %}
+    <p class="dash-sub dash-sub-note">Other accounts on this server keep discovery running frequently — your companies still get ~{{ target_polls }} checks daily.</p>
+    {% elif discovery.shared_server and monitored_count %}
+    <p class="dash-sub dash-sub-note">Shared server schedule: {{ discovery.global_interval_label }} across all accounts.</p>
+    {% endif %}
   </div>
   <div class="dash-hero-actions">
     <a class="btn btn-hero" href="/jobs?high_priority=1">View matches</a>
@@ -42,6 +47,35 @@
   <a class="filter-chip" href="/jobs?q=consultant">Consultant</a>
   <a class="filter-chip" href="/jobs?source=linkedin">LinkedIn</a>
   <a class="filter-chip" href="/jobs?min_score=70">Score 70+</a>
+</section>
+
+<section class="card dash-journey" aria-label="Your job search journey">
+  <header class="panel-head">
+    <h2>Your journey</h2>
+    <span class="small muted">{{ journey_done }}/5 complete · <a href="/help">Guide</a></span>
+  </header>
+  <div class="journey-steps">
+    <a class="journey-step {{ 'done' if journey.cv else 'todo' }}" href="/profile">
+      <span class="journey-icon">{% if journey.cv %}✓{% else %}1{% endif %}</span>
+      <span>Upload CV</span>
+    </a>
+    <a class="journey-step {{ 'done' if journey.companies else 'todo' }}" href="/companies">
+      <span class="journey-icon">{% if journey.companies %}✓{% else %}2{% endif %}</span>
+      <span>Pick companies</span>
+    </a>
+    <a class="journey-step {{ 'done' if journey.matches else 'todo' }}" href="/jobs?high_priority=1">
+      <span class="journey-icon">{% if journey.matches %}✓{% else %}3{% endif %}</span>
+      <span>Review matches</span>
+    </a>
+    <a class="journey-step {{ 'done' if journey.applications else 'todo' }}" href="/applications">
+      <span class="journey-icon">{% if journey.applications %}✓{% else %}4{% endif %}</span>
+      <span>Track applications</span>
+    </a>
+    <a class="journey-step {{ 'done' if journey.alerts else 'todo' }}" href="/settings">
+      <span class="journey-icon">{% if journey.alerts %}✓{% else %}5{% endif %}</span>
+      <span>Enable alerts</span>
+    </a>
+  </div>
 </section>
 
 {% if not has_cv or monitored_count == 0 %}
@@ -73,7 +107,7 @@
       <div>
         {% if monitored_count %}
           <strong>{{ monitored_count }} companies monitoring</strong>
-          <p class="small muted">Discovery {{ discovery_label }}.</p>
+          <p class="small muted">~{{ target_polls }} checks per company daily · {{ discovery_label }}.</p>
         {% else %}
           <strong><a href="/companies">Add companies to monitor</a></strong>
           <p class="small muted">Or load the starter pack in one click below.</p>

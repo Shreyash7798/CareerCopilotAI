@@ -25,7 +25,7 @@ from app.config import (
     save_settings,
 )
 from app.deps import get_current_user, require_admin
-from app.discovery_schedule import discovery_schedule_summary, effective_discovery_interval_minutes
+from app.discovery_schedule import discovery_schedule_summary
 from app.scheduler import refresh_discovery_schedule
 from app.job_visibility import job_age_label, job_status_badge, visible_jobs_filter
 from app.db import get_db, session_scope
@@ -232,8 +232,10 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request)
     analytics = compute_analytics(db, user_id=user.id)
     from app.user_access import enabled_monitor_count
+    from app.user_prefs import notification_config_for_user
 
-    monitored_count = enabled_monitor_count(db)
+    monitored_count = enabled_monitor_count(db, user.id)
+    discovery = discovery_schedule_summary(user.id, db)
     has_cv = bool(user.cv_path)
     visible = visible_jobs_filter()
     score_join = and_(UserJobScore.job_id == Job.id, UserJobScore.user_id == user.id)
@@ -276,7 +278,20 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         .scalars()
         .all()
     )
-    discovery_mins = effective_discovery_interval_minutes()
+    discovery_mins = discovery["user_discovery_interval_minutes"]
+    notif_cfg = notification_config_for_user(user)
+    alerts_ready = bool(
+        (notif_cfg.get("telegram_enabled", True) and str(notif_cfg.get("telegram_chat_id") or "").strip())
+        or (notif_cfg.get("email_enabled", True) and (get_user_profile_dict(user).get("email") or user.email))
+    )
+    journey = {
+        "cv": has_cv,
+        "companies": monitored_count > 0,
+        "matches": analytics.high_priority_jobs > 0,
+        "applications": analytics.applications_submitted > 0,
+        "alerts": alerts_ready,
+    }
+    journey_done = sum(1 for v in journey.values() if v)
     profile = get_user_profile_dict(user)
     display_name = (profile.get("full_name") or user.display_name or "").strip()
     if display_name:
@@ -295,6 +310,9 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
             "has_cv": has_cv,
             "display_name": display_name,
             "discovery_mins": discovery_mins,
+            "discovery": discovery,
+            "journey": journey,
+            "journey_done": journey_done,
             "current_user": user,
             "is_admin": user.role == ROLE_ADMIN,
         },
@@ -638,6 +656,7 @@ def companies_page(request: Request, db: Session = Depends(get_db)):
             else 0,
             "ats_config": company_sources.parse_ats_config(company),
         }
+    display_companies.sort(key=lambda c: (not c.enabled, (c.name or "").lower()))
     catalog = get_company_catalog()
     existing_names = {c.name.lower() for c in companies if c.ats_type}
     return templates.TemplateResponse(
@@ -992,11 +1011,25 @@ def profile_page(request: Request, db: Session = Depends(get_db)):
     )
 
 
+@router.get("/help", response_class=HTMLResponse)
+def help_page(request: Request):
+    user = get_current_user(request)
+    return templates.TemplateResponse(
+        request,
+        "help.html",
+        {
+            "active": "help",
+            "is_admin": user.role == ROLE_ADMIN,
+            "current_user": user,
+        },
+    )
+
+
 @router.get("/settings", response_class=HTMLResponse)
-def settings_page(request: Request):
+def settings_page(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request)
     prefs = get_user_preferences(user)
-    discovery_summary = discovery_schedule_summary()
+    discovery_summary = discovery_schedule_summary(user.id, db)
     return templates.TemplateResponse(
         request,
         "settings.html",

@@ -110,6 +110,26 @@ def bootstrap_starter_pack(session) -> int:
     return added
 
 
+def bootstrap_starter_pack_for_user(session, user_id: int) -> int:
+    """Load starter companies and enable monitors for one user only."""
+    from app.user_access import ensure_monitor
+
+    bootstrap_starter_pack(session)
+    enabled = 0
+    for item in _load_starter_pack():
+        entry = _catalog_entry(item.get("sector", ""), item.get("name", ""))
+        if entry is None:
+            continue
+        company = session.execute(
+            select(Company).where(Company.name == entry["name"])
+        ).scalar_one_or_none()
+        if company is None or not company.ats_type:
+            continue
+        ensure_monitor(session, user_id, company, enabled=True)
+        enabled += 1
+    return enabled
+
+
 def ensure_accenture(session) -> bool:
     """Upgrade legacy disabled Accenture careers_page rows to the API connector."""
     entry = None
