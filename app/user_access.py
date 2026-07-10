@@ -179,9 +179,9 @@ def upsert_user_job_score(
 
 
 def hydrate_job_from_score(job: Job, score: UserJobScore) -> Job:
-    job.match_score = score.match_score
+    job.match_score = score.match_score if score.match_score is not None else 0.0
     job.score_breakdown = score.score_breakdown
-    job.jd_fit_score = score.jd_fit_score
+    job.jd_fit_score = score.jd_fit_score if score.jd_fit_score is not None else 0.0
     job.jd_fit_breakdown = score.jd_fit_breakdown
     job.is_high_priority = score.is_high_priority
     return job

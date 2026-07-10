@@ -63,14 +63,18 @@ def disk_stats() -> dict:
         return {"total_gb": 0, "free_gb": 0}
 
 
-def last_discovery_log() -> ActivityLog | None:
-    with session_scope() as session:
+def last_discovery_log(session=None) -> ActivityLog | None:
+    from app.models import ActivityLog
+
+    if session is not None:
         return session.execute(
             select(ActivityLog)
             .where(ActivityLog.category == "discovery", ActivityLog.message.like("Pipeline run:%"))
             .order_by(ActivityLog.timestamp.desc())
             .limit(1)
         ).scalar_one_or_none()
+    with session_scope() as scoped:
+        return last_discovery_log(scoped)
 
 
 def tail_file(path: Path, lines: int = 15) -> list[str]:
@@ -92,7 +96,7 @@ def get_system_status(session=None) -> dict:
         users = db.execute(select(func.count(User.id))).scalar() or 0
         active_users = db.execute(select(func.count(User.id)).where(User.is_active.is_(True))).scalar() or 0
         jobs = db.execute(select(func.count(Job.id)).where(Job.is_active.is_(True))).scalar() or 0
-        last_disc = last_discovery_log()
+        last_disc = last_discovery_log(db)
         enabled = enabled_source_count(db)
 
     mem = memory_stats()

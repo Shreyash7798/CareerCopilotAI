@@ -17,21 +17,33 @@ _templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 async def not_found_handler(request: Request, exc):
     status = getattr(exc, "status_code", 404)
     detail = getattr(exc, "detail", "Not found")
-    if status != 404:
-        if request.url.path.startswith("/api/"):
-            return JSONResponse({"detail": detail}, status_code=status)
-        return HTMLResponse(str(detail), status_code=status)
     if request.url.path.startswith("/api/"):
-        return JSONResponse({"detail": "Not found"}, status_code=404)
+        return JSONResponse({"detail": detail}, status_code=status)
+    if status == 401:
+        from fastapi.responses import RedirectResponse
+
+        return RedirectResponse(f"/login?next={request.url.path}", status_code=303)
+    if status == 404:
+        return _templates.TemplateResponse(
+            request,
+            "error.html",
+            {
+                "code": 404,
+                "title": "Page not found",
+                "message": "That page does not exist. Try the dashboard or Help.",
+            },
+            status_code=404,
+        )
+    message = str(detail) if detail else "Something went wrong."
     return _templates.TemplateResponse(
         request,
         "error.html",
         {
-            "code": 404,
-            "title": "Page not found",
-            "message": "That page does not exist. Try the dashboard or Help.",
+            "code": status,
+            "title": f"Error {status}",
+            "message": message,
         },
-        status_code=404,
+        status_code=status,
     )
 
 
