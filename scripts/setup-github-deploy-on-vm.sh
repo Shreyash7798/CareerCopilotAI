@@ -28,6 +28,7 @@ echo "[setup] Setting repository secrets for $REPO ..."
 gh secret set OCI_HOST --body "$PUBLIC_IP" --repo "$REPO"
 gh secret set OCI_USER --body "$(whoami)" --repo "$REPO"
 gh secret set OCI_SSH_KEY < "$DEPLOY_KEY" --repo "$REPO"
+gh secret set OCI_SSH_KEY_B64 --body "$(base64 < "$DEPLOY_KEY" | tr -d '\n')" --repo "$REPO"
 
 echo "[setup] Triggering Deploy to OCI workflow ..."
 gh workflow run "Deploy to OCI" --repo "$REPO" --ref main

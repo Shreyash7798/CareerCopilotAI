@@ -4,6 +4,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/Shreyash7798/CareerCopilotAI/main/scripts/bootstrap-oci.sh | bash
 #
 # Then add GitHub secrets printed by bootstrap: OCI_HOST, OCI_USER, OCI_SSH_KEY
+# (or OCI_SSH_KEY_B64 — single line, avoids newline paste issues in GitHub UI)
 #
 # Manual re-deploy: Actions → Deploy to OCI → Run workflow
 
@@ -26,25 +27,52 @@ jobs:
         env:
           OCI_HOST: ${{ secrets.OCI_HOST }}
           OCI_USER: ${{ secrets.OCI_USER }}
-          OCI_SSH_KEY: ${{ secrets.OCI_SSH_KEY }}
           DEPLOY_HOOK_URL: ${{ secrets.DEPLOY_HOOK_URL }}
           DEPLOY_HOOK_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
         run: |
           set -euo pipefail
           APP_DIR="/home/ubuntu/CareerCopilotAI"
           BOOTSTRAP="cd ~/CareerCopilotAI && git fetch origin main && git reset --hard origin/main && bash scripts/bootstrap-oci.sh"
+          KEY_FILE="${HOME}/.ssh/deploy_key"
 
-          if [ -n "${OCI_HOST}" ] && [ -n "${OCI_USER}" ] && [ -n "${OCI_SSH_KEY}" ]; then
-            echo "Deploying via SSH to ${OCI_USER}@${OCI_HOST}"
-            mkdir -p ~/.ssh
-            printf '%s\n' "${OCI_SSH_KEY}" | tr -d '\r' > ~/.ssh/deploy_key
-            chmod 600 ~/.ssh/deploy_key
-            if ! ssh-keygen -y -f ~/.ssh/deploy_key >/dev/null 2>&1; then
-              echo "::error::OCI_SSH_KEY secret is invalid. On the VM run: cat ~/.ssh/github_actions_deploy"
-              echo "::error::Re-add the full private key (BEGIN/END lines) at GitHub → Settings → Secrets → OCI_SSH_KEY"
-              exit 1
+          write_and_validate_key() {
+            mkdir -p "${HOME}/.ssh"
+            chmod 700 "${HOME}/.ssh"
+
+            if [ -n "${{ secrets.OCI_SSH_KEY_B64 }}" ]; then
+              echo "Using OCI_SSH_KEY_B64"
+              echo "${{ secrets.OCI_SSH_KEY_B64 }}" | tr -d '[:space:]' | base64 -d > "${KEY_FILE}"
+            elif [ -n "${{ secrets.OCI_SSH_KEY }}" ]; then
+              echo "Using OCI_SSH_KEY"
+              # Write the secret directly — multiline keys break when passed through env:
+              echo "${{ secrets.OCI_SSH_KEY }}" | tr -d '\r' > "${KEY_FILE}"
+            else
+              return 1
             fi
-            ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o BatchMode=yes \
+
+            chmod 600 "${KEY_FILE}"
+            if [ ! -s "${KEY_FILE}" ]; then
+              echo "::error::SSH key secret is empty."
+              return 1
+            fi
+            if ! grep -q "BEGIN .*PRIVATE KEY" "${KEY_FILE}"; then
+              echo "::error::Secret is not a private key (missing BEGIN … PRIVATE KEY)."
+              echo "::error::Use ~/.ssh/github_actions_deploy from the VM — NOT the .pub file or Oracle .pem unless that is your deploy key."
+              return 1
+            fi
+            if ! ssh-keygen -y -f "${KEY_FILE}" >/dev/null 2>&1; then
+              echo "::error::OCI_SSH_KEY is unreadable (newlines may have been lost when pasting in GitHub UI)."
+              echo "::error::On the VM run: bash ~/CareerCopilotAI/scripts/print-github-secrets.sh"
+              echo "::error::Add OCI_SSH_KEY_B64 (single line) instead of re-pasting the multiline key."
+              return 1
+            fi
+            return 0
+          }
+
+          if [ -n "${OCI_HOST}" ] && [ -n "${OCI_USER}" ] && write_and_validate_key; then
+            echo "Deploying via SSH to ${OCI_USER}@${OCI_HOST}"
+            ssh-keyscan -H "${OCI_HOST}" >> "${HOME}/.ssh/known_hosts" 2>/dev/null || true
+            ssh -i "${KEY_FILE}" -o StrictHostKeyChecking=accept-new -o BatchMode=yes \
               "${OCI_USER}@${OCI_HOST}" bash -s <<SCRIPT
           set -euo pipefail
           cd ${APP_DIR}
@@ -69,7 +97,7 @@ jobs:
           echo "::notice::The VM still auto-updates via cron (every 5 min) if bootstrap ran."
           echo "::notice::To enable this workflow, on the VM run:"
           echo "::notice::  bash ~/CareerCopilotAI/scripts/print-github-secrets.sh"
-          echo "::notice::Then add OCI_HOST, OCI_USER, OCI_SSH_KEY to repo Secrets → Actions."
+          echo "::notice::Then add OCI_HOST, OCI_USER, OCI_SSH_KEY (or OCI_SSH_KEY_B64) to repo Secrets → Actions."
           echo "::notice::Or use HTTP hook: DEPLOY_HOOK_URL + DEPLOY_TOKEN (see docs/OCI-DEPLOY.md)."
           echo "::notice::First-time bootstrap (Oracle Console SSH):"
           echo "::notice::  ${BOOTSTRAP}"
