@@ -7,30 +7,53 @@
 
 <div class="card">
   <h2>Accounts</h2>
-  <table class="data-table">
-    <thead>
-      <tr><th>Email</th><th>Name</th><th>Role</th><th>Status</th><th>CV</th><th>Last login</th><th></th></tr>
-    </thead>
-    <tbody>
-      {% for u in users %}
-      <tr>
-        <td>{{ u.email }}</td>
-        <td>{{ u.display_name }}</td>
-        <td>{{ u.role }}</td>
-        <td>{{ 'Active' if u.is_active else 'Disabled' }}</td>
-        <td>{{ 'Yes' if u.has_cv else 'No' }}</td>
-        <td class="small muted">{{ u.last_login_at or '—' }}</td>
-        <td>
-          {% if u.id != current_user.id %}
-          <form class="inline-form" method="post" action="/admin/users/{{ u.id }}/toggle">
-            <button class="btn btn-sm" type="submit">{{ 'Disable' if u.is_active else 'Enable' }}</button>
-          </form>
-          {% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div class="user-cards mobile-only">
+    {% for u in users %}
+    <article class="user-card">
+      <div class="user-card-head">
+        <strong>{{ u.display_name or u.email }}</strong>
+        <span class="badge">{{ u.role }}</span>
+      </div>
+      <p class="small muted user-card-email">{{ u.email }}</p>
+      <div class="user-card-meta">
+        <span>{{ 'Active' if u.is_active else 'Disabled' }}</span>
+        <span>CV: {{ 'Yes' if u.has_cv else 'No' }}</span>
+        {% if u.last_login_at %}<span class="muted">Last: {{ u.last_login_at }}</span>{% endif %}
+      </div>
+      {% if u.id != current_user.id %}
+      <form class="inline-form" method="post" action="/admin/users/{{ u.id }}/toggle">
+        <button class="btn btn-sm" type="submit">{{ 'Disable' if u.is_active else 'Enable' }}</button>
+      </form>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </div>
+  <div class="table-wrap desktop-only">
+    <table class="list data-table">
+      <thead>
+        <tr><th>Email</th><th>Name</th><th>Role</th><th>Status</th><th>CV</th><th class="col-hide-sm">Last login</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td>{{ u.email }}</td>
+          <td>{{ u.display_name }}</td>
+          <td>{{ u.role }}</td>
+          <td>{{ 'Active' if u.is_active else 'Disabled' }}</td>
+          <td>{{ 'Yes' if u.has_cv else 'No' }}</td>
+          <td class="small muted col-hide-sm">{{ u.last_login_at or '—' }}</td>
+          <td>
+            {% if u.id != current_user.id %}
+            <form class="inline-form" method="post" action="/admin/users/{{ u.id }}/toggle">
+              <button class="btn btn-sm" type="submit">{{ 'Disable' if u.is_active else 'Enable' }}</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 
 {% if user_count < max_users %}

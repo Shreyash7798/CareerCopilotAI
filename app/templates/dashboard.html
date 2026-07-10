@@ -6,10 +6,14 @@
 {% set setup_pct = (setup_done * 50)|int %}
 {% set shown = recent_high if recent_high else recent_top %}
 {% set total_bucket = analytics.score_buckets.high + analytics.score_buckets.medium + analytics.score_buckets.low %}
-{% if discovery_mins >= 120 and discovery_mins % 60 == 0 %}
-  {% set discovery_label = 'every ' ~ (discovery_mins // 60) ~ ' hour' ~ ('s' if discovery_mins // 60 > 1 else '') %}
-{% elif discovery_mins >= 60 and discovery_mins % 60 == 0 %}
-  {% set discovery_label = 'every hour' %}
+{% if discovery_mins >= 60 %}
+  {% set hrs = discovery_mins // 60 %}
+  {% set mins_rem = discovery_mins % 60 %}
+  {% if mins_rem == 0 %}
+    {% set discovery_label = ('every hour' if hrs == 1 else 'every ' ~ hrs ~ ' hours') %}
+  {% else %}
+    {% set discovery_label = 'every ' ~ hrs ~ 'h ' ~ mins_rem ~ 'm' %}
+  {% endif %}
 {% else %}
   {% set discovery_label = 'every ' ~ discovery_mins ~ ' min' %}
 {% endif %}
