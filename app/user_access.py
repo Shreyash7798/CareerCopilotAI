@@ -283,6 +283,37 @@ def company_page_stats(session: Session, user_id: int) -> tuple[dict[int, dict],
     return stats, app_counts
 
 
+def user_company_poll_status(session: Session, user_id: int, limit: int = 5) -> list[dict]:
+    """Recent poll times for companies this user monitors."""
+    from datetime import datetime, timezone
+
+    rows = session.execute(
+        select(Company.name, Company.last_run_at, Company.last_run_status)
+        .join(UserCompanyMonitor, UserCompanyMonitor.company_id == Company.id)
+        .where(
+            UserCompanyMonitor.user_id == user_id,
+            UserCompanyMonitor.enabled.is_(True),
+            Company.ats_type.isnot(None),
+        )
+        .order_by(Company.last_run_at.desc().nullslast(), Company.name)
+        .limit(limit)
+    ).all()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    out = []
+    for name, last_run, status in rows:
+        ago = ""
+        if last_run:
+            mins = int((now - last_run.replace(tzinfo=None)).total_seconds() // 60)
+            if mins < 60:
+                ago = f"{mins}m ago"
+            elif mins < 1440:
+                ago = f"{mins // 60}h ago"
+            else:
+                ago = f"{mins // 1440}d ago"
+        out.append({"name": name, "last_run_ago": ago or "not yet", "status": status or "—"})
+    return out
+
+
 def apply_monitor_to_company(company: Company, monitor: UserCompanyMonitor | None) -> Company:
     """Overlay per-user monitor settings onto a company for the UI."""
     if monitor is not None:

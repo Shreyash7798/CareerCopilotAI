@@ -16,6 +16,21 @@
   {% endfor %}
 </nav>
 
+<section class="card panel-card pipeline-summary">
+  <header class="panel-head"><h2>Pipeline</h2></header>
+  <div class="pipeline-bar">
+    {% for s in statuses %}
+    <a class="pipeline-seg {{ 'on' if status_filter == s }}" href="/applications?status={{ s|urlencode }}" title="{{ s }}">
+      <span class="pipeline-count">{{ pipeline_counts.get(s, 0) }}</span>
+      <span class="pipeline-label">{{ s }}</span>
+    </a>
+    {% endfor %}
+  </div>
+  {% if stale_applications %}
+  <p class="small muted mt">No follow-up set for {{ stale_applications|length }} application(s) applied 7+ days ago — consider scheduling one.</p>
+  {% endif %}
+</section>
+
 <section class="card panel-card">
   <header class="panel-head"><h2>Add application</h2></header>
   <form method="post" action="/applications/new" class="grid cols-3">

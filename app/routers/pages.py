@@ -24,8 +24,10 @@ from app.config import (
     get_sources_config,
     save_settings,
 )
+from app.company_presets import apply_preset, load_presets
 from app.deps import get_current_user, require_admin
 from app.discovery_schedule import discovery_schedule_summary
+from app.ops import backup_database, get_system_status
 from app.scheduler import refresh_discovery_schedule
 from app.job_visibility import job_age_label, job_status_badge, visible_jobs_filter
 from app.db import get_db, session_scope
@@ -52,6 +54,7 @@ from app.user_access import (
     hydrate_job_from_score,
     monitor_for_user,
     sync_monitor_from_company,
+    user_company_poll_status,
     user_job_score,
 )
 from app.user_prefs import get_user_preferences, get_user_profile_dict, save_user_preferences
@@ -154,6 +157,33 @@ def _jobs_query_string(filters: dict, page: int | None = None) -> str:
 
 
 templates.env.filters["jobs_query"] = _jobs_query_string
+
+
+def _score_tooltip(breakdown) -> str:
+    """One-line tooltip from score_breakdown JSON or list."""
+    if not breakdown:
+        return ""
+    if isinstance(breakdown, str):
+        try:
+            items = json.loads(breakdown)
+        except json.JSONDecodeError:
+            return ""
+    else:
+        items = breakdown
+    if not isinstance(items, list):
+        return ""
+    parts = []
+    for item in items[:5]:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name", "")).replace("_", " ").title()
+        score = float(item.get("score", 0))
+        pct = int(round(score * 100 if score <= 1 else score))
+        parts.append(f"{name}: {pct}")
+    return " · ".join(parts)
+
+
+templates.env.filters["score_tooltip"] = _score_tooltip
 
 
 def _parse_date(value: str | None) -> datetime | None:
@@ -293,6 +323,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         "alerts": alerts_ready,
     }
     journey_done = sum(1 for v in journey.values() if v)
+    company_polls = user_company_poll_status(db, user.id, limit=5)
     profile = get_user_profile_dict(user)
     display_name = (profile.get("full_name") or user.display_name or "").strip()
     if display_name:
@@ -314,6 +345,8 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
             "discovery": discovery,
             "journey": journey,
             "journey_done": journey_done,
+            "company_polls": company_polls,
+            "preferred_locations": (profile.get("preferred_locations") or [])[:3],
             "current_user": user,
             "is_admin": user.role == ROLE_ADMIN,
         },
@@ -538,6 +571,16 @@ def applications_page(request: Request, db: Session = Depends(get_db), status: s
     if status:
         stmt = stmt.where(Application.status == status)
     apps = db.execute(stmt).scalars().all()
+    pipeline_counts = {s: 0 for s in APPLICATION_STATUSES}
+    for a in apps:
+        pipeline_counts[a.status] = pipeline_counts.get(a.status, 0) + 1
+    stale_applications = [
+        a for a in apps
+        if a.status in ("Applied", "Interviewing")
+        and a.date_applied
+        and (datetime.utcnow() - a.date_applied).days >= 7
+        and not a.follow_up_date
+    ]
     return templates.TemplateResponse(
         request,
         "applications.html",
@@ -546,6 +589,8 @@ def applications_page(request: Request, db: Session = Depends(get_db), status: s
             "applications": apps,
             "statuses": APPLICATION_STATUSES,
             "status_filter": status,
+            "pipeline_counts": pipeline_counts,
+            "stale_applications": stale_applications[:5],
         },
     )
 
@@ -652,6 +697,7 @@ def companies_page(request: Request, db: Session = Depends(get_db)):
             "existing_names": existing_names,
             "ats_types": ATS_TYPES,
             "priorities": COMPANY_PRIORITIES,
+            "presets": load_presets(),
         },
     )
 
@@ -1083,19 +1129,25 @@ def settings_notifications_update(
     run_summary_email: str | None = Form(None),
     daily_summary: str | None = Form(None),
     followup_reminders: str | None = Form(None),
+    weekly_summary: str | None = Form(None),
 ):
     user = get_current_user(request)
     prefs = get_user_preferences(user)
-    prefs["notifications"] = {
-        "telegram_chat_id": telegram_chat_id.strip(),
-        "telegram_enabled": telegram_enabled is not None,
-        "email_enabled": email_enabled is not None,
-        "high_priority": high_priority is not None,
-        "run_summary": run_summary is not None,
-        "run_summary_email": run_summary_email is not None,
-        "daily_summary": daily_summary is not None,
-        "followup_reminders": followup_reminders is not None,
-    }
+    notif = dict(prefs.get("notifications") or {})
+    notif.update(
+        {
+            "telegram_chat_id": telegram_chat_id.strip(),
+            "telegram_enabled": telegram_enabled is not None,
+            "email_enabled": email_enabled is not None,
+            "high_priority": high_priority is not None,
+            "run_summary": run_summary is not None,
+            "run_summary_email": run_summary_email is not None,
+            "daily_summary": daily_summary is not None,
+            "followup_reminders": followup_reminders is not None,
+            "weekly_summary": weekly_summary is not None,
+        }
+    )
+    prefs["notifications"] = notif
     save_user_preferences(user.id, prefs)
     return RedirectResponse("/settings", status_code=303)
 
@@ -1186,3 +1238,42 @@ def admin_toggle_user(request: Request, user_id: int):
         except ValueError:
             pass
     return RedirectResponse("/admin/users", status_code=303)
+
+
+@router.get("/admin/status", response_class=HTMLResponse)
+def admin_status_page(request: Request, db: Session = Depends(get_db)):
+    require_admin(request)
+    return templates.TemplateResponse(
+        request,
+        "admin_status.html",
+        {"active": "status", "status": get_system_status(db), "is_admin": True},
+    )
+
+
+@router.post("/admin/backup")
+def admin_backup(request: Request):
+    require_admin(request)
+    try:
+        path = backup_database()
+        with session_scope() as session:
+            from app.models import log_activity
+
+            log_activity(session, "config", f"Manual database backup: {path.name}")
+    except Exception as exc:  # noqa: BLE001
+        return RedirectResponse(f"/admin/status?error={exc}", status_code=303)
+    return RedirectResponse("/admin/status", status_code=303)
+
+
+@router.post("/companies/preset/{preset_id}")
+def company_apply_preset(request: Request, preset_id: str):
+    user = get_current_user(request)
+    try:
+        with session_scope() as session:
+            count = apply_preset(session, user.id, preset_id)
+            from app.models import log_activity
+
+            log_activity(session, "config", f"Applied company preset '{preset_id}' ({count} companies)", user_id=user.id)
+        refresh_discovery_schedule()
+    except ValueError as exc:
+        return RedirectResponse(f"/companies?error={exc}", status_code=303)
+    return RedirectResponse("/companies", status_code=303)

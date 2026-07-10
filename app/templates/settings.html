@@ -64,6 +64,10 @@
       <input type="checkbox" name="followup_reminders" value="1" {% if settings.notifications.followup_reminders %}checked{% endif %}>
       Application follow-up reminders
     </label>
+    <label class="f checkbox-row">
+      <input type="checkbox" name="weekly_summary" value="1" {% if settings.notifications.weekly_summary %}checked{% endif %}>
+      Weekly summary (Sundays)
+    </label>
     <div><button class="btn btn-accent" type="submit">Save alerts</button></div>
   </form>
   <div class="filter-actions mt">

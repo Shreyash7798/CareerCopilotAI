@@ -1,0 +1,30 @@
+# Staging clone settings — separate database and port from production.
+# Copy to config/settings.yaml in ~/CareerCopilotAI-staging
+
+app:
+  data_dir: data-staging
+  database_url: sqlite:///data-staging/careercopilot.db
+  host: 0.0.0.0
+  port: 8001
+  base_url: http://161.118.184.228:8001
+  max_users: 10
+  admin_email: admin@careercopilot.local
+  session_secret: ""
+  deploy_token: ""
+
+bootstrap:
+  enabled: true
+  starter_pack_on_first_run: true
+  run_discovery_on_startup: false
+  discovery_startup_delay_seconds: 300
+
+scheduler:
+  enabled: true
+  discovery_auto_interval: true
+
+notifications:
+  telegram:
+    enabled: false
+    bot_token: ""
+  email:
+    enabled: false

@@ -42,12 +42,24 @@
 <section class="dash-quick-filters" aria-label="Quick filters">
   <span class="small muted">Quick filters:</span>
   <a class="filter-chip" href="/jobs?high_priority=true">High priority</a>
-  <a class="filter-chip" href="/jobs?location=Mumbai">Mumbai</a>
-  <a class="filter-chip" href="/jobs?location=Pune">Pune</a>
+  {% for loc in preferred_locations %}
+  <a class="filter-chip" href="/jobs?location={{ loc|urlencode }}">{{ loc }}</a>
+  {% endfor %}
   <a class="filter-chip" href="/jobs?q=consultant">Consultant</a>
   <a class="filter-chip" href="/jobs?source=linkedin">LinkedIn</a>
   <a class="filter-chip" href="/jobs?min_score=70">Score 70+</a>
 </section>
+
+{% if company_polls and monitored_count %}
+<section class="card dash-journey" style="margin-bottom:14px;">
+  <header class="panel-head"><h2>Your companies — last checked</h2></header>
+  <ul class="small" style="margin:0;padding-left:1.2rem;">
+    {% for c in company_polls %}
+    <li><strong>{{ c.name }}</strong> · {{ c.last_run_ago }}{% if c.status != '—' %} · {{ c.status }}{% endif %}</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
 
 <section class="card dash-journey" aria-label="Your job search journey">
   <header class="panel-head">
@@ -187,9 +199,9 @@
         {% for job in shown %}
         <a class="job-card" href="/jobs/{{ job.id }}">
           <div class="job-card-score score-dual">
-            <span class="score {{ 'hi' if job.match_score >= 70 else 'mid' if job.match_score >= 45 else 'lo' }}" title="Your preferences">{{ job.match_score|round|int }}</span>
+            <span class="score {{ 'hi' if job.match_score >= 70 else 'mid' if job.match_score >= 45 else 'lo' }}" title="{{ job.score_breakdown|score_tooltip or 'Your preferences' }}">{{ job.match_score|round|int }}</span>
             <span class="score-sub">you</span>
-            <span class="score {{ 'hi' if job.jd_fit_score >= 70 else 'mid' if job.jd_fit_score >= 45 else 'lo' }} jd" title="JD fit">{{ job.jd_fit_score|round|int }}</span>
+            <span class="score {{ 'hi' if job.jd_fit_score >= 70 else 'mid' if job.jd_fit_score >= 45 else 'lo' }} jd" title="{{ job.jd_fit_breakdown|score_tooltip or 'JD vs background' }}">{{ job.jd_fit_score|round|int }}</span>
             <span class="score-sub">JD</span>
           </div>
           <div class="job-card-body">

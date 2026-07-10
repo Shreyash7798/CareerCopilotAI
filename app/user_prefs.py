@@ -48,6 +48,7 @@ def _default_user_notifications() -> dict[str, Any]:
         "run_summary_email": bool(global_cfg.get("run_summary_email", False)),
         "daily_summary": True,
         "followup_reminders": bool(global_cfg.get("followup_reminders", True)),
+        "weekly_summary": True,
     }
 
 

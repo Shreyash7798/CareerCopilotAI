@@ -1,0 +1,34 @@
+# One-click company bundles for members (applied to their account only).
+presets:
+  - id: consulting_core
+    name: Consulting core
+    description: Big 4 + strategy boutiques + Accenture (API-friendly)
+    companies:
+      - Accenture India
+      - PwC
+      - EY India
+      - Deloitte
+      - KPMG India
+      - TCS (Tata Consultancy Services)
+      - Thoughtworks
+  - id: consulting_strategy
+    name: Strategy & advisory
+    description: MBB-alternative and advisory firms (some may be bot-protected)
+    companies:
+      - Accenture India
+      - Roland Berger
+      - BearingPoint
+      - Protiviti India
+      - Kearney
+  - id: linkedin_mumbai
+    name: LinkedIn Mumbai feeds
+    description: Curated LinkedIn job searches for Mumbai consulting & EPC
+    companies:
+      - LinkedIn — Consulting (Mumbai)
+      - LinkedIn — Civil & Infrastructure (Mumbai)
+      - LinkedIn — EPC & Construction (India)
+  - id: linkedin_pune
+    name: LinkedIn Pune feeds
+    description: Pune consulting roles
+    companies:
+      - LinkedIn — Consulting (Pune)

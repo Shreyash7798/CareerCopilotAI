@@ -56,6 +56,8 @@ from app.startup import (
 )
 
 from app.deploy_hook import run_deploy
+from app.ops import get_system_status
+from app.users import list_users, max_users, user_count
 from app.version import deploy_info
 
 router = APIRouter(prefix="/api", tags=["api"])
@@ -126,7 +128,7 @@ def _job_dict(job: Job) -> dict:
 
 
 @router.post("/pipeline/run")
-def api_run_pipeline(db: Session = Depends(get_db)):
+def api_run_pipeline(request: Request, db: Session = Depends(get_db)):
     """Trigger a discovery run in a background subprocess."""
     from datetime import datetime, timedelta
 
@@ -135,6 +137,7 @@ def api_run_pipeline(db: Session = Depends(get_db)):
     from app.discovery_runner import is_discovery_running, run_discovery_subprocess
     from app.models import ActivityLog
 
+    user = get_current_user(request)
     now = datetime.utcnow()
 
     def _naive(ts):
@@ -150,12 +153,28 @@ def api_run_pipeline(db: Session = Depends(get_db)):
         select(ActivityLog.timestamp)
         .where(
             ActivityLog.category == "discovery",
-            ActivityLog.message.like("Pipeline run:%"),
+            ActivityLog.message.like("Discovery started:%"),
+            ActivityLog.user_id == user.id,
         )
         .order_by(ActivityLog.timestamp.desc())
         .limit(1)
     ).scalar_one_or_none()
     if recent is not None and now - _naive(recent) < timedelta(minutes=15):
+        return {
+            "status": "skipped",
+            "message": "You triggered discovery recently. Please wait ~15 minutes.",
+        }
+
+    recent_global = db.execute(
+        select(ActivityLog.timestamp)
+        .where(
+            ActivityLog.category == "discovery",
+            ActivityLog.message.like("Pipeline run:%"),
+        )
+        .order_by(ActivityLog.timestamp.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if recent_global is not None and now - _naive(recent_global) < timedelta(minutes=15):
         return {
             "status": "skipped",
             "message": "Discovery ran recently. It auto-runs every 3 hours — no need to click again.",
@@ -938,3 +957,9 @@ def api_analytics(request: Request, db: Session = Depends(get_db)):
 def api_admin_users(request: Request):
     require_admin(request)
     return {"users": list_users(), "max_users": max_users(), "user_count": user_count()}
+
+
+@router.get("/admin/status")
+def api_admin_status(request: Request, db: Session = Depends(get_db)):
+    require_admin(request)
+    return get_system_status(db)
