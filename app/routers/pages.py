@@ -288,8 +288,8 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     journey = {
         "cv": has_cv,
         "companies": monitored_count > 0,
-        "matches": analytics.high_priority_jobs > 0,
-        "applications": analytics.applications_submitted > 0,
+        "matches": analytics["high_priority_jobs"] > 0,
+        "applications": analytics["applications_submitted"] > 0,
         "alerts": alerts_ready,
     }
     journey_done = sum(1 for v in journey.values() if v)
