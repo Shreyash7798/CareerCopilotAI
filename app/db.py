@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import database_url
@@ -18,14 +18,32 @@ _engine = None
 _SessionLocal: sessionmaker | None = None
 
 
+def _set_sqlite_pragmas(dbapi_connection, _connection_record) -> None:
+    """Apply per-connection pragmas.
+
+    PRAGMA busy_timeout is per-connection, so it MUST be set on every pooled
+    connection — otherwise web requests fail instantly with 'database is
+    locked' whenever the discovery subprocess is writing.
+    """
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("PRAGMA busy_timeout=30000")
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+    finally:
+        cursor.close()
+
+
 def get_engine():
     global _engine
     if _engine is None:
         _engine = create_engine(
             database_url(),
-            connect_args={"check_same_thread": False},
+            connect_args={"check_same_thread": False, "timeout": 30},
             future=True,
         )
+        if _engine.dialect.name == "sqlite":
+            event.listen(_engine, "connect", _set_sqlite_pragmas)
     return _engine
 
 
@@ -49,14 +67,13 @@ def init_db() -> None:
 
 
 def _configure_sqlite(engine) -> None:
-    """WAL mode lets the dashboard read while discovery writes in another process."""
+    """Persist WAL mode in the database file (pragmas also set per-connection)."""
     from sqlalchemy import text
 
     if engine.dialect.name != "sqlite":
         return
     with engine.connect() as conn:
         conn.execute(text("PRAGMA journal_mode=WAL"))
-        conn.execute(text("PRAGMA busy_timeout=30000"))
         conn.commit()
 
 

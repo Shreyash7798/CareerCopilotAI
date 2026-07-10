@@ -95,10 +95,13 @@ def authenticate(email: str, password: str) -> User | None:
         return None
     if not verify_password(password, user.password_hash):
         return None
-    with session_scope() as session:
-        db_user = session.get(User, user.id)
-        if db_user is not None:
-            db_user.last_login_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    try:
+        with session_scope() as session:
+            db_user = session.get(User, user.id)
+            if db_user is not None:
+                db_user.last_login_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    except Exception:  # noqa: BLE001 — login must not fail because of a busy DB
+        pass
     return user
 
 
