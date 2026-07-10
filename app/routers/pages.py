@@ -969,27 +969,48 @@ def company_catalog_add_sector(request: Request, sector: str = Form(...)):
 
 @router.post("/companies/catalog/disable-sector")
 def company_catalog_disable_sector(request: Request, sector: str = Form(...)):
-    """Disable monitoring for every catalog company in a sector (this user only)."""
+    """Disable monitoring for every company in a sector (this user only).
+
+    Matches by catalog membership OR the sector stored on the company row,
+    so manually added / renamed companies in the sector are included too.
+    """
+    from sqlalchemy import update
+
+    from app.models import UserCompanyMonitor
+
     user = get_current_user(request)
     catalog = get_company_catalog()
-    names: list[str] = []
+    names: set[str] = set()
+    known_sector = False
     for sec in catalog.get("sectors", []):
         if sec.get("name") == sector:
-            names = [item.get("name") for item in sec.get("companies", []) if item.get("name")]
+            known_sector = True
+            names = {item.get("name") for item in sec.get("companies", []) if item.get("name")}
             break
-    if not names:
-        return RedirectResponse("/companies?error=Unknown+sector", status_code=303)
 
-    disabled = 0
     with session_scope() as session:
-        for name in names:
-            company = session.execute(select(Company).where(Company.name == name)).scalar_one_or_none()
-            if company is None:
-                continue
-            monitor = monitor_for_user(session, user.id, company.id)
-            if monitor is not None and monitor.enabled:
-                monitor.enabled = False
-                disabled += 1
+        conditions = [Company.sector == sector]
+        if names:
+            conditions.append(Company.name.in_(names))
+        company_ids = [
+            cid
+            for cid in session.execute(select(Company.id).where(or_(*conditions))).scalars()
+        ]
+        if not company_ids:
+            if not known_sector:
+                return RedirectResponse("/companies?error=Unknown+sector", status_code=303)
+            return RedirectResponse("/companies", status_code=303)
+
+        result = session.execute(
+            update(UserCompanyMonitor)
+            .where(
+                UserCompanyMonitor.user_id == user.id,
+                UserCompanyMonitor.company_id.in_(company_ids),
+                UserCompanyMonitor.enabled.is_(True),
+            )
+            .values(enabled=False)
+        )
+        disabled = result.rowcount or 0
         log_activity(
             session,
             "config",
