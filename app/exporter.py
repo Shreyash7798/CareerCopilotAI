@@ -85,12 +85,11 @@ def _companies_frame(session, user_id: int) -> pd.DataFrame:
 
 
 def _recruiters_frame(session, user_id: int) -> pd.DataFrame:
-    company_ids = [
-        m.company_id
-        for m in session.execute(
+    company_ids = list(
+        session.execute(
             select(UserCompanyMonitor.company_id).where(UserCompanyMonitor.user_id == user_id)
         ).scalars()
-    ]
+    )
     if not company_ids:
         return pd.DataFrame()
     rows = []

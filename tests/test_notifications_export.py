@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 import app.db as db_mod
 from app.exporter import export_excel
-from app.models import Application, Company, Job, User, UserCompanyMonitor, UserJobScore
+from app.models import Application, Company, Job, Recruiter, User, UserCompanyMonitor, UserJobScore
 from app.notifications import build_daily_summary, deliver_to_user, notify_high_priority
 from app.users import COOKIE_NAME, ROLE_MEMBER, create_session_token
 
@@ -50,6 +50,31 @@ def test_export_excel_only_includes_user_data(temp_db, tmp_path, monkeypatch):
     assert jobs.iloc[0]["Title"] == "Consultant"
     assert len(apps) == 1
     assert apps.iloc[0]["Company"] == "Secret"
+
+
+def test_export_excel_recruiters_sheet(temp_db, tmp_path, monkeypatch):
+    """Recruiters sheet must not crash when loading company_id list."""
+    monkeypatch.setattr(
+        "app.exporter.user_exports_dir",
+        lambda uid: tmp_path / f"user_{uid}" / "exports",
+    )
+    with db_mod.session_scope() as session:
+        user = User(email="one@test.com", display_name="One", password_hash="x", role=ROLE_MEMBER)
+        company = Company(name="Acme", ats_type="greenhouse")
+        session.add_all([user, company])
+        session.flush()
+        session.add(UserCompanyMonitor(user_id=user.id, company_id=company.id, enabled=True))
+        session.add(
+            Recruiter(name="Pat", company_id=company.id, public_email="pat@acme.com")
+        )
+        user_id = user.id
+
+    path = export_excel(user_id)
+    import pandas as pd
+
+    recs = pd.read_excel(path, sheet_name="Recruiters")
+    assert len(recs) == 1
+    assert recs.iloc[0]["Name"] == "Pat"
 
 
 def test_notify_high_priority_per_user(temp_db, monkeypatch):

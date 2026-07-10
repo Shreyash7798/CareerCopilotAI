@@ -75,6 +75,10 @@
         <input type="hidden" name="sector" value="{{ sec.name }}">
         <button class="btn btn-sm" type="submit">Add all</button>
       </form>
+      <form class="inline-form" method="post" action="/companies/catalog/disable-sector" style="display:inline;margin-left:4px" onsubmit="return confirm('Stop monitoring all companies in {{ sec.name }} for your account?')">
+        <input type="hidden" name="sector" value="{{ sec.name }}">
+        <button class="btn btn-sm" type="submit">Disable all</button>
+      </form>
     </summary>
     <div class="table-wrap mt">
       <table class="list">

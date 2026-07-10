@@ -6,7 +6,7 @@ Use this after deploying to Oracle Cloud or any public host.
 
 - [ ] Set `app.auth_password` in `config/settings.yaml` (public IP protection)
 - [ ] Set `app.base_url` to your real URL (e.g. `http://161.118.184.228` or HTTPS domain)
-- [ ] Optional: HTTPS via Cloudflare Tunnel or `scripts/nginx-careercopilot.conf` + Let's Encrypt
+- [ ] Optional: HTTPS via Cloudflare Tunnel or `bash scripts/setup-https.sh` — see [HTTPS-SETUP.md](HTTPS-SETUP.md)
 
 ## Notifications
 
