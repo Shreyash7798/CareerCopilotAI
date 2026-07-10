@@ -17,7 +17,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from app.config import get_settings
 from app.discovery_runner import run_discovery_subprocess
 from app.discovery_schedule import effective_discovery_interval_minutes, refresh_discovery_interval
-from app.notifications import send_daily_summary, send_followup_reminders
+from app.notifications import send_daily_summary, send_followup_reminders, send_weekly_summary
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +91,13 @@ def start_scheduler() -> BackgroundScheduler | None:
         send_followup_reminders,
         CronTrigger(hour=9, minute=0, **cron_kwargs),
         id="followup_reminders",
+        max_instances=1,
+        coalesce=True,
+    )
+    _scheduler.add_job(
+        send_weekly_summary,
+        CronTrigger(day_of_week="sun", hour=9, minute=30, **cron_kwargs),
+        id="weekly_summary",
         max_instances=1,
         coalesce=True,
     )

@@ -243,6 +243,55 @@ def send_daily_summary() -> None:
             )
 
 
+def build_weekly_summary(user_id: int) -> str:
+    """Seven-day digest for one user."""
+    since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=7)
+    base_url = _base_url()
+    with session_scope() as session:
+        user = session.get(User, user_id)
+        if user is None:
+            return ""
+        score_join = and_(UserJobScore.job_id == Job.id, UserJobScore.user_id == user_id)
+        new_rows = session.execute(
+            select(UserJobScore, Job)
+            .join(Job, score_join)
+            .where(Job.discovered_at >= since)
+            .order_by(UserJobScore.match_score.desc())
+        ).all()
+        high = [(s, j) for s, j in new_rows if s.is_high_priority]
+        apps = session.execute(
+            select(Application).where(Application.user_id == user_id, Application.updated_at >= since)
+        ).scalars().all()
+        parts = [
+            f"CareerCopilot weekly summary",
+            f"• {len(new_rows)} new jobs matched for you ({len(high)} high priority)",
+            f"• {len(apps)} tracker updates this week",
+            f"\nTop matches: {base_url}/jobs?high_priority=1",
+            f"Tracker: {base_url}/applications",
+        ]
+        return "\n".join(parts)
+
+
+def send_weekly_summary() -> None:
+    """Sunday digest — per user."""
+    with session_scope() as session:
+        for user_id in active_user_ids(session):
+            user = session.get(User, user_id)
+            if user is None or not user.is_active:
+                continue
+            cfg = notification_config_for_user(user)
+            if not cfg.get("weekly_summary", True):
+                continue
+            text = build_weekly_summary(user_id)
+            outcome = deliver_to_user(user, "CareerCopilot weekly summary", text)
+            log_activity(
+                session,
+                "notify",
+                f"Weekly summary sent (telegram={outcome['telegram']}, email={outcome['email']})",
+                user_id=user_id,
+            )
+
+
 def send_run_summary(result) -> None:
     """Per-user heartbeat after discovery — only their new matches, never global totals."""
     with session_scope() as session:

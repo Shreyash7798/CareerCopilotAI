@@ -47,7 +47,23 @@
     <p class="page-sub">Monitor employers and load from the catalog</p>
   </div>
 </header>
-<p class="small muted" style="margin-top:-8px;margin-bottom:14px">Set an ATS type to monitor a company via discovery. Use <strong>crawl4ai</strong> for JS-heavy portals when the Crawl4AI sidecar is enabled — see <code>docs/CRAWL4AI.md</code>.</p>
+<p class="small muted" style="margin-top:-8px;margin-bottom:14px">Set an ATS type to monitor a company via discovery. Use keyword filters to limit roles (e.g. <code>consultant, analyst</code>).</p>
+
+{% if presets %}
+<section class="card panel-card">
+  <h2>Quick presets</h2>
+  <p class="small muted">Enable a bundle of companies for <strong>your account only</strong>.</p>
+  <div class="preset-grid">
+    {% for p in presets %}
+    <form method="post" action="/companies/preset/{{ p.id }}" class="preset-card" onsubmit="return confirm('Enable {{ p.name }} for your account?')">
+      <strong>{{ p.name }}</strong>
+      <p class="small muted">{{ p.description }}</p>
+      <button class="btn btn-sm btn-accent" type="submit">Enable {{ (p.companies or [])|length }} companies</button>
+    </form>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
 
 <div class="card panel-card">
   <h2>Add from catalog</h2>

@@ -59,9 +59,9 @@
   {% for job in jobs %}
   <a class="job-card" href="/jobs/{{ job.id }}">
     <div class="job-card-score score-dual">
-      <span class="score {{ 'hi' if job.match_score >= 70 else 'mid' if job.match_score >= 45 else 'lo' }}" title="Your preferences">{{ job.match_score|round|int }}</span>
+      <span class="score {{ 'hi' if job.match_score >= 70 else 'mid' if job.match_score >= 45 else 'lo' }}" title="{{ job.score_breakdown|score_tooltip or 'Your preferences' }}">{{ job.match_score|round|int }}</span>
       <span class="score-sub">you</span>
-      <span class="score {{ 'hi' if job.jd_fit_score >= 70 else 'mid' if job.jd_fit_score >= 45 else 'lo' }} jd" title="JD vs background">{{ job.jd_fit_score|round|int }}</span>
+      <span class="score {{ 'hi' if job.jd_fit_score >= 70 else 'mid' if job.jd_fit_score >= 45 else 'lo' }} jd" title="{{ job.jd_fit_breakdown|score_tooltip or 'JD vs background' }}">{{ job.jd_fit_score|round|int }}</span>
       <span class="score-sub">JD</span>
     </div>
     <div class="job-card-body">

@@ -548,3 +548,42 @@ details.rowform summary { cursor: pointer; }
 @media (max-width: 640px) {
   .journey-step { flex: 1 1 100%; }
 }
+
+/* ── Company presets + application pipeline ───────────────── */
+
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 10px;
+}
+.preset-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px;
+  background: #f8fafc;
+}
+.preset-card strong { display: block; margin-bottom: 4px; }
+
+.pipeline-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.pipeline-seg {
+  flex: 1 1 72px;
+  min-width: 64px;
+  text-align: center;
+  padding: 8px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  text-decoration: none;
+  font-size: .78rem;
+}
+.pipeline-seg:hover { border-color: var(--accent); text-decoration: none; }
+.pipeline-seg.on { border-color: var(--accent); background: #eff6ff; font-weight: 600; }
+.pipeline-count { display: block; font-size: 1.1rem; font-weight: 700; line-height: 1.2; }
+.pipeline-label { display: block; color: var(--muted); font-size: .7rem; margin-top: 2px; }

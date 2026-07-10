@@ -170,8 +170,14 @@ fi
 log "Deploy complete: $AFTER"
 
 chmod +x "$APP_DIR/scripts/health-watchdog.sh" 2>/dev/null || true
+chmod +x "$APP_DIR/scripts/backup-db.sh" 2>/dev/null || true
 WATCHDOG_LINE="* * * * * bash $APP_DIR/scripts/health-watchdog.sh >> $APP_DIR/data/watchdog.log 2>&1"
 if ! crontab -l 2>/dev/null | grep -qF "health-watchdog.sh"; then
   log "Installing health watchdog (auto-recover from 502)"
   (crontab -l 2>/dev/null || true; echo "$WATCHDOG_LINE") | crontab -
+fi
+BACKUP_LINE="15 3 * * * CAREERCOPILOT_DIR=$APP_DIR bash $APP_DIR/scripts/backup-db.sh >> $APP_DIR/data/backup.log 2>&1"
+if ! crontab -l 2>/dev/null | grep -qF "backup-db.sh"; then
+  log "Installing nightly database backup (03:15)"
+  (crontab -l 2>/dev/null || true; echo "$BACKUP_LINE") | crontab -
 fi

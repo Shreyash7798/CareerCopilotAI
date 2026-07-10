@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}System status · CareerCopilot AI{% endblock %}
+{% block content %}
+<h1>System status</h1>
+<p class="muted small">Production health — admin only. Staging runs on port 8001 when configured.</p>
+
+<div class="grid cols-2">
+  <section class="card panel-card">
+    <h2>Application</h2>
+    <table class="kv-table">
+      <tr><td>Revision</td><td><code>{{ status.revision }}</code></td></tr>
+      <tr><td>Environment</td><td>{{ status.environment }}</td></tr>
+      <tr><td>Base URL</td><td>{{ status.base_url or '—' }}</td></tr>
+      <tr><td>Port</td><td>{{ status.port }}</td></tr>
+      <tr><td>Users</td><td>{{ status.active_users }} / {{ status.max_users }} active</td></tr>
+      <tr><td>Active jobs</td><td>{{ status.active_jobs }}</td></tr>
+      <tr><td>Monitored companies</td><td>{{ status.enabled_companies }}</td></tr>
+      <tr><td>Discovery interval</td><td>every {{ status.discovery_interval_minutes }} min</td></tr>
+      <tr><td>Last discovery</td><td>{{ status.last_discovery or '—' }}</td></tr>
+    </table>
+    {% if status.last_discovery_message %}
+    <p class="small muted">{{ status.last_discovery_message }}</p>
+    {% endif %}
+  </section>
+
+  <section class="card panel-card">
+    <h2>Server</h2>
+    <table class="kv-table">
+      <tr><td>RAM</td><td>{{ status.memory.used_mb }} / {{ status.memory.total_mb }} MB used</td></tr>
+      <tr><td>Disk free</td><td>{{ status.disk.free_gb }} GB</td></tr>
+      <tr><td>Backups</td><td><code>{{ status.backup_dir }}</code></td></tr>
+    </table>
+    <form method="post" action="/admin/backup" class="mt">
+      <button class="btn btn-accent" type="submit">Backup database now</button>
+    </form>
+    <p class="small muted mt"><a href="/api/admin/status">JSON API</a> · <a href="/activity">Activity log</a></p>
+  </section>
+</div>
+
+<section class="card panel-card">
+  <h2>Watchdog log (recent)</h2>
+  <pre class="small" style="overflow-x:auto;max-height:200px;">{% for line in status.watchdog_log %}{{ line }}
+{% else %}No watchdog entries yet.{% endfor %}</pre>
+</section>
+
+<section class="card panel-card">
+  <h2>Deploy log (recent)</h2>
+  <pre class="small" style="overflow-x:auto;max-height:200px;">{% for line in status.deploy_log %}{{ line }}
+{% else %}No deploy log yet.{% endfor %}</pre>
+</section>
+{% endblock %}

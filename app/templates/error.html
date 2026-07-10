@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} · CareerCopilot</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">Career<span>Copilot</span></a>
+  </header>
+  <main class="content" style="max-width: 480px; margin-top: 12vh;">
+    <div class="card" style="text-align: center; padding: 28px 20px;">
+      <p class="dash-eyebrow">Error {{ code }}</p>
+      <h1 style="margin: 8px 0 12px;">{{ title }}</h1>
+      <p class="muted">{{ message }}</p>
+      <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+        <a class="btn btn-accent" href="/">Dashboard</a>
+        <a class="btn" href="/help">Help</a>
+        <a class="btn" href="/login">Sign in</a>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

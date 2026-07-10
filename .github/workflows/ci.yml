@@ -1,0 +1,42 @@
+# CI — tests + smoke tests on every push and PR.
+# Staging branch deploys to port 8001 on the VM (see docs/STAGING-WORKFLOW.md).
+# Only `main` updates production (port 8000).
+
+name: CI
+
+on:
+  push:
+    branches: [main, staging, 'cursor/**']
+  pull_request:
+    branches: [main, staging]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: python3 -m pytest tests/ -q --tb=short
+
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Smoke tests (login → dashboard → key pages)
+        run: python3 -m pytest tests/test_smoke.py -q --tb=short
