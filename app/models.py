@@ -139,10 +139,64 @@ APPLICATION_STATUSES = [
 ]
 
 
+class User(Base):
+    """Account for dashboard access. Up to 10 users; admin manages accounts."""
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    display_name: Mapped[str] = mapped_column(String(255), default="")
+    password_hash: Mapped[str] = mapped_column(String(255))
+    role: Mapped[str] = mapped_column(String(16), default="member")  # admin | member
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    cv_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    profile_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    preferences_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class UserCompanyMonitor(Base):
+    """Per-user company monitoring preferences (shared job catalog)."""
+
+    __tablename__ = "user_company_monitors"
+    __table_args__ = (UniqueConstraint("user_id", "company_id", name="uq_user_company_monitor"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    keywords: Mapped[str | None] = mapped_column(Text, nullable=True)
+    refresh_interval_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    priority: Mapped[str] = mapped_column(String(16), default="normal")
+    recruiter_search_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_run_status: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+
+class UserJobScore(Base):
+    """Per-user match scores for shared job postings."""
+
+    __tablename__ = "user_job_scores"
+    __table_args__ = (UniqueConstraint("user_id", "job_id", name="uq_user_job_score"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"), index=True)
+    match_score: Mapped[float] = mapped_column(Float, default=0.0, index=True)
+    score_breakdown: Mapped[str | None] = mapped_column(Text, nullable=True)
+    jd_fit_score: Mapped[float] = mapped_column(Float, default=0.0, index=True)
+    jd_fit_breakdown: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_high_priority: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    notified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 class Application(Base):
     __tablename__ = "applications"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     job_id: Mapped[int | None] = mapped_column(ForeignKey("jobs.id"), nullable=True)
     company_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     role: Mapped[str | None] = mapped_column(String(512), nullable=True)
@@ -162,6 +216,7 @@ class Resume(Base):
     __tablename__ = "resumes"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     job_id: Mapped[int | None] = mapped_column(ForeignKey("jobs.id"), nullable=True)
     # master | tailored | cover_letter
     kind: Mapped[str] = mapped_column(String(32), default="tailored")
@@ -175,6 +230,7 @@ class InterviewPrep(Base):
     __tablename__ = "interview_preps"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"), index=True)
     content_json: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
@@ -204,11 +260,18 @@ class ActivityLog(Base):
     __tablename__ = "activity_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
     category: Mapped[str] = mapped_column(String(64), index=True)  # discovery|scoring|notify|export|resume|app
     message: Mapped[str] = mapped_column(Text)
     detail: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
-def log_activity(session, category: str, message: str, detail: str | None = None) -> None:
-    session.add(ActivityLog(category=category, message=message, detail=detail))
+def log_activity(
+    session,
+    category: str,
+    message: str,
+    detail: str | None = None,
+    user_id: int | None = None,
+) -> None:
+    session.add(ActivityLog(category=category, message=message, detail=detail, user_id=user_id))

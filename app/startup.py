@@ -12,7 +12,7 @@ import threading
 
 from sqlalchemy import func, select
 
-from app.company_sources import seed_from_yaml_config
+from app.company_sources import enabled_source_count, seed_from_yaml_config
 from app.config import (
     PROJECT_ROOT,
     get_company_catalog,
@@ -22,7 +22,8 @@ from app.config import (
 )
 from app.db import session_scope
 from app.location_infer import infer_location
-from app.models import Company, Job, log_activity
+from app.models import Company, Job, User, log_activity
+from app.user_access import ensure_monitor
 from app.scheduler import schedule_deferred_discovery
 
 logger = logging.getLogger(__name__)
@@ -82,18 +83,20 @@ def _apply_catalog_entry(session, entry: dict) -> bool:
     if not entry.get("caveat") and not company.enabled:
         company.enabled = True
         changed = True
+    if changed and company.ats_type:
+        _ensure_monitors_for_active_users(session, company)
     return changed
 
 
 def enabled_company_count(session) -> int:
-    return (
-        session.execute(
-            select(func.count(Company.id)).where(
-                Company.ats_type.isnot(None), Company.enabled.is_(True)
-            )
-        ).scalar()
-        or 0
-    )
+    return enabled_source_count(session)
+
+
+def _ensure_monitors_for_active_users(session, company: Company) -> None:
+    if not company.ats_type:
+        return
+    for user_id in session.execute(select(User.id).where(User.is_active.is_(True))).scalars():
+        ensure_monitor(session, user_id, company, enabled=company.enabled)
 
 
 def bootstrap_starter_pack(session) -> int:

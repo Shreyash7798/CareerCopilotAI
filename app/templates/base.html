@@ -28,15 +28,15 @@
     <a href="/profile" class="{{ 'on' if active == 'profile' }}">Profile</a>
     <a href="/settings" class="{{ 'on' if active == 'settings' }}">Settings</a>
     <a href="/activity" class="{{ 'on' if active == 'activity' }}">Activity</a>
+    {% if is_admin|default(false) %}<a href="/admin/users" class="{{ 'on' if active == 'admin' }}">Users</a>{% endif %}
   </nav>
   <main class="content">
     {% block content %}{% endblock %}
   </main>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <footer class="footer">
-    CareerCopilot AI · local-first ·
-    <a href="/api/exports/excel/download">Download Excel</a> ·
-    <a href="/docs">API</a> ·
+    CareerCopilot AI ·
+    <a href="/api/exports/excel/download">My Excel</a> ·
     <span class="muted small" id="build-rev"></span>
     <form class="inline-form" method="post" action="/logout"><button class="btn btn-sm" type="submit" style="border:none;background:none;color:var(--muted);cursor:pointer">Sign out</button></form>
   </footer>

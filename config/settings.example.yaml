@@ -16,6 +16,12 @@ app:
   # Set a password to require login (strongly recommended when the dashboard
   # is reachable from the internet). Empty = no login (local-first default).
   auth_password: ""
+  # Multi-user (up to 10 accounts). Admin creates member accounts from the dashboard.
+  max_users: 10
+  # Email for the bootstrap admin on first run (legacy single-user migration).
+  admin_email: admin@careercopilot.local
+  # Session signing secret — generate: python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+  session_secret: ""
   # Shared secret for POST /api/deploy/hook (GitHub Actions can deploy without SSH).
   # Generate: python3 -c "import secrets; print(secrets.token_urlsafe(32))"
   deploy_token: ""
@@ -176,9 +182,9 @@ notifications:
   followup_reminders: true
   telegram:
     enabled: false
-    # Create a bot with @BotFather, then set the token and your chat id.
+    # Shared bot token — each user sets their own chat_id in Settings.
     bot_token: ""
-    chat_id: ""
+    # chat_id is per-user (Settings page), not global.
   email:
     enabled: false
     smtp_host: smtp.gmail.com

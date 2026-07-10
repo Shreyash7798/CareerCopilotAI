@@ -171,13 +171,21 @@ def score_job(
     return total, components
 
 
-def load_scoring_profile() -> dict:
-    """Merge settings profile with parsed CV facts for scoring."""
+def load_scoring_profile(user_id: int | None = None) -> dict:
+    """Merge per-user profile with parsed CV facts for scoring."""
     from sqlalchemy import select
 
     from app.config import get_profile
     from app.db import session_scope
-    from app.models import UserProfile
+    from app.models import User, UserProfile
+    from app.user_prefs import get_user_profile_dict
+
+    if user_id is not None:
+        with session_scope() as session:
+            user = session.get(User, user_id)
+            if user is not None:
+                session.expunge(user)
+                return get_user_profile_dict(user)
 
     profile = dict(get_profile())
     with session_scope() as session:

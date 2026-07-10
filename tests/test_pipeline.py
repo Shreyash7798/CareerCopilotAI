@@ -1,12 +1,59 @@
 """End-to-end pipeline test with a fake connector and a temporary database,
 using database-backed company configuration (Company Management MVP)."""
 
+import json
+
 import pytest
 
 import app.db as db_mod
 import app.pipeline as pipeline_mod
-from app.models import Company
+from app.models import Company, User, UserCompanyMonitor
 from app.sources.base import RawJob
+from sqlalchemy import select
+
+
+def _profile_and_scoring():
+    profile = {
+        "experience_years": 3,
+        "preferred_locations": ["Mumbai", "Pune"],
+        "skills": ["Supply Chain", "Excel", "Strategy"],
+        "preferred_domains": ["Consulting"],
+        "interests": ["Operations Consulting"],
+        "preferred_companies": [],
+        "avoided_companies": [],
+    }
+    scoring = {
+        "weights": {},
+        "high_priority_threshold": 70,
+        "role_keywords": ["consultant", "operations"],
+        "negative_role_keywords": ["intern"],
+    }
+    return profile, scoring
+
+
+def _ensure_admin_monitor(session, company: Company, *, keywords: str | None = None) -> None:
+    admin = session.query(User).filter_by(role="admin").one()
+    profile, scoring = _profile_and_scoring()
+    admin.preferences_json = json.dumps(
+        {"profile": profile, "scoring": scoring, "notifications": {}}
+    )
+    existing = (
+        session.query(UserCompanyMonitor)
+        .filter_by(user_id=admin.id, company_id=company.id)
+        .one_or_none()
+    )
+    if existing is None:
+        session.add(
+            UserCompanyMonitor(
+                user_id=admin.id,
+                company_id=company.id,
+                enabled=True,
+                keywords=keywords,
+            )
+        )
+    else:
+        existing.enabled = True
+        existing.keywords = keywords
 
 
 @pytest.fixture()
@@ -56,52 +103,38 @@ def fake_setup(temp_db, monkeypatch):
     CURRENT_JOBS[:] = FAKE_JOBS
     monkeypatch.setitem(pipeline_mod.REGISTRY, "greenhouse", lambda entry: list(CURRENT_JOBS))
     monkeypatch.setattr(pipeline_mod, "sources_yaml_exists", lambda: False)
+    profile, scoring = _profile_and_scoring()
     monkeypatch.setattr(
         pipeline_mod,
         "get_settings",
-        lambda refresh=False: {
-            "profile": {
-                "experience_years": 3,
-                "preferred_locations": ["Mumbai", "Pune"],
-                "skills": ["Supply Chain", "Excel", "Strategy"],
-                "preferred_domains": ["Consulting"],
-                "interests": ["Operations Consulting"],
-                "preferred_companies": [],
-                "avoided_companies": [],
-            },
-            "scoring": {
-                "weights": {},
-                "high_priority_threshold": 70,
-                "role_keywords": ["consultant", "operations"],
-                "negative_role_keywords": ["intern"],
-            },
-        },
+        lambda refresh=False: {"profile": profile, "scoring": scoring},
     )
     with db_mod.session_scope() as session:
-        session.add(
-            Company(
-                name="Acme Consulting",
-                ats_type="greenhouse",
-                ats_config='{"board": "acme"}',
-                enabled=True,
-                keywords="consultant, operations",
-            )
+        company = Company(
+            name="Acme Consulting",
+            ats_type="greenhouse",
+            ats_config='{"board": "acme"}',
+            enabled=True,
+            keywords="consultant, operations",
         )
+        session.add(company)
+        session.flush()
+        _ensure_admin_monitor(session, company, keywords="consultant, operations")
 
 
 def test_pipeline_end_to_end_db_config(fake_setup):
     result = pipeline_mod.run_pipeline(notify=False, export=False)
     assert result.sources_run == 1
     assert result.fetched == 3
-    assert result.filtered_out == 1  # software engineer (company keywords)
-    assert result.duplicates == 1  # exact duplicate
-    assert result.new_jobs == 1
-    assert result.high_priority == 1  # strong profile match
+    assert result.filtered_out == 0
+    assert result.duplicates == 1
+    assert result.new_jobs == 2  # consultant + engineer stored; keywords filter per-user scores
+    assert result.high_priority >= 1
 
     # Second run: everything is a duplicate now.
     result2 = pipeline_mod.run_pipeline(notify=False, export=False)
     assert result2.new_jobs == 0
-    assert result2.duplicates == 2
+    assert result2.duplicates == 3
 
     from sqlalchemy import select
 
@@ -109,10 +142,10 @@ def test_pipeline_end_to_end_db_config(fake_setup):
 
     with db_mod.session_scope() as session:
         jobs = session.execute(select(Job)).scalars().all()
-        assert len(jobs) == 1
-        job = jobs[0]
-        assert job.match_score >= 70
-        assert job.score_breakdown  # explainable
+        assert len(jobs) == 2
+        consultant = next(j for j in jobs if "Consultant" in j.title and "Software" not in j.title)
+        assert consultant.match_score >= 70
+        assert consultant.score_breakdown
         company = session.execute(select(Company)).scalars().one()
         assert company.last_run_at is not None
         assert "3 jobs fetched" in (company.last_run_status or "")
@@ -142,7 +175,8 @@ def test_disabled_company_is_skipped(fake_setup):
         from sqlalchemy import select
 
         company = session.execute(select(Company)).scalars().one()
-        company.enabled = False
+        monitor = session.query(UserCompanyMonitor).filter_by(company_id=company.id).one()
+        monitor.enabled = False
     result = pipeline_mod.run_pipeline(notify=False, export=False)
     assert result.sources_run == 0
     assert result.new_jobs == 0
@@ -150,7 +184,7 @@ def test_disabled_company_is_skipped(fake_setup):
 
 def test_stale_jobs_deactivated_and_reactivated(fake_setup):
     result = pipeline_mod.run_pipeline(notify=False, export=False)
-    assert result.new_jobs == 1
+    assert result.new_jobs == 2
 
     # The consultant role disappears from the board; a new one appears.
     CURRENT_JOBS[:] = [
@@ -166,7 +200,7 @@ def test_stale_jobs_deactivated_and_reactivated(fake_setup):
     ]
     result2 = pipeline_mod.run_pipeline(notify=False, export=False)
     assert result2.new_jobs == 1
-    assert result2.deactivated == 1  # the operations consultant closed
+    assert result2.deactivated == 2  # operations consultant + software engineer closed
 
     from sqlalchemy import select
 
@@ -181,7 +215,7 @@ def test_stale_jobs_deactivated_and_reactivated(fake_setup):
     CURRENT_JOBS[:] = FAKE_JOBS
     result3 = pipeline_mod.run_pipeline(notify=False, export=False)
     assert result3.new_jobs == 0
-    assert result3.reactivated == 1
+    assert result3.reactivated == 2
     with db_mod.session_scope() as session:
         by_title = {j.title: j for j in session.execute(select(Job)).scalars()}
         assert by_title["Operations Consultant"].is_active is True
@@ -198,6 +232,9 @@ def test_max_sources_per_run_limits_batch(fake_setup, monkeypatch):
                 enabled=True,
             )
         )
+        session.flush()
+        beta = session.execute(select(Company).where(Company.name == "Beta Consulting")).scalar_one()
+        _ensure_admin_monitor(session, beta)
     result = pipeline_mod.run_pipeline(notify=False, export=False)
     assert result.sources_run == 1
     assert result.sources_skipped >= 1
@@ -238,6 +275,9 @@ def test_fair_rotation_prefers_unpolled_companies(fake_setup, monkeypatch):
                 enabled=True,
             )
         )
+        session.flush()
+        zulu = session.execute(select(Company).where(Company.name == "Zulu Corp")).scalar_one()
+        _ensure_admin_monitor(session, zulu)
 
     result = pipeline_mod.run_pipeline(notify=False, export=False)
     assert result.sources_run == 1
@@ -296,14 +336,27 @@ def test_aged_untracked_jobs_deactivated(fake_setup, monkeypatch):
             },
         },
     )
+    from app.models import Application, Job, User
+
     pipeline_mod.run_pipeline(notify=False, export=False)
     tracked_job_id = None
     with db_mod.session_scope() as session:
-        job = session.execute(select(Job)).scalars().one()
+        admin = session.query(User).filter_by(role="admin").one()
+        job = (
+            session.execute(select(Job).where(Job.title == "Operations Consultant"))
+            .scalars()
+            .one()
+        )
         tracked_job_id = job.id
         job.posted_at = datetime.utcnow() - timedelta(days=45)
         session.add(
-            Application(job_id=job.id, company_name="Acme Consulting", role=job.title, status="Applied")
+            Application(
+                user_id=admin.id,
+                job_id=job.id,
+                company_name="Acme Consulting",
+                role=job.title,
+                status="Applied",
+            )
         )
         job2 = Job(
             company_id=job.company_id,

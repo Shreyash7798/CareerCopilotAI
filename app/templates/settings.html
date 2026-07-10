@@ -5,16 +5,16 @@
 <header class="page-header">
   <div>
     <h1 class="page-title">Settings</h1>
-    <p class="page-sub">Profile preferences and scoring configuration</p>
+    <p class="page-sub">Your profile, scoring preferences, and alerts</p>
   </div>
 </header>
 
 <section class="card panel-card settings-section">
   <header class="panel-head"><h2>Profile & preferences</h2></header>
-  <p class="small muted">These values drive match scoring. Lists are comma-separated.</p>
+  <p class="small muted">These values drive your personal match scores. Lists are comma-separated.</p>
   <form method="post" action="/settings/profile" class="grid cols-2">
     <label class="f">Full name <input name="full_name" value="{{ settings.profile.full_name or '' }}"></label>
-    <label class="f">Email <input name="email" value="{{ settings.profile.email or '' }}"></label>
+    <label class="f">Email <input name="email" type="email" value="{{ settings.profile.email or '' }}"></label>
     <label class="f">Phone <input name="phone" value="{{ settings.profile.phone or '' }}"></label>
     <label class="f">Current employer <input name="current_employer" value="{{ settings.profile.current_employer or '' }}"></label>
     <label class="f">Experience (years) <input name="experience_years" type="number" step="0.5" value="{{ settings.profile.experience_years or 0 }}"></label>
@@ -29,47 +29,82 @@
   </form>
 </section>
 
+<section class="card panel-card settings-section">
+  <header class="panel-head"><h2>Your alerts</h2></header>
+  <p class="small muted">Alerts go only to you — via Telegram (your chat ID) or the email above. The shared bot is configured on the server.</p>
+  <form method="post" action="/settings/notifications" class="grid cols-2">
+    <label class="f">Telegram chat ID
+      <input name="telegram_chat_id" value="{{ settings.notifications.telegram_chat_id or '' }}" placeholder="e.g. 123456789">
+    </label>
+    <label class="f checkbox-row">
+      <input type="checkbox" name="telegram_enabled" value="1" {% if settings.notifications.telegram_enabled %}checked{% endif %}>
+      Telegram alerts
+    </label>
+    <label class="f checkbox-row">
+      <input type="checkbox" name="email_enabled" value="1" {% if settings.notifications.email_enabled %}checked{% endif %}>
+      Email alerts (to profile email)
+    </label>
+    <label class="f checkbox-row">
+      <input type="checkbox" name="high_priority" value="1" {% if settings.notifications.high_priority %}checked{% endif %}>
+      High-priority new jobs
+    </label>
+    <label class="f checkbox-row">
+      <input type="checkbox" name="run_summary" value="1" {% if settings.notifications.run_summary %}checked{% endif %}>
+      After each discovery run
+    </label>
+    <label class="f checkbox-row">
+      <input type="checkbox" name="run_summary_email" value="1" {% if settings.notifications.run_summary_email %}checked{% endif %}>
+      Discovery check-in by email too
+    </label>
+    <label class="f checkbox-row">
+      <input type="checkbox" name="daily_summary" value="1" {% if settings.notifications.daily_summary %}checked{% endif %}>
+      Daily morning summary
+    </label>
+    <label class="f checkbox-row">
+      <input type="checkbox" name="followup_reminders" value="1" {% if settings.notifications.followup_reminders %}checked{% endif %}>
+      Application follow-up reminders
+    </label>
+    <div><button class="btn btn-accent" type="submit">Save alerts</button></div>
+  </form>
+  <div class="filter-actions mt">
+    <button class="btn" onclick="testNotifications(this)">Send test alert</button>
+    <button class="btn" onclick="sendDailySummary(this)">Send my daily summary now</button>
+  </div>
+</section>
+
 <div class="grid cols-2">
   <section class="card panel-card settings-section">
-    <header class="panel-head"><h2>Scoring weights</h2></header>
+    <header class="panel-head"><h2>Scoring</h2></header>
     <div class="weight-pills">
       {% for name, w in settings.scoring.weights.items() %}
       <span class="weight-pill">{{ name.replace('_',' ') }} <span>{{ w }}</span></span>
       {% endfor %}
     </div>
     <p class="small muted mt">High-priority threshold: <strong>{{ settings.scoring.high_priority_threshold }}</strong></p>
-    <p class="small muted">Edit weights in <code>config/settings.yaml</code>. Saving profile above re-scores all jobs.</p>
-    <button class="btn mt" onclick="rescoreJobs(this)">Re-score all jobs now</button>
+    <button class="btn mt" onclick="rescoreJobs(this)">Re-score my jobs now</button>
   </section>
 
   <section class="card panel-card settings-section">
-    <header class="panel-head"><h2>Scheduler & notifications</h2></header>
+    <header class="panel-head"><h2>Discovery</h2></header>
     <table class="kv-table">
-      <tr><td>Scheduler</td><td>{{ 'enabled' if settings.scheduler.enabled else 'disabled' }}</td></tr>
+      <tr><td>Your monitored companies</td><td>{{ discovery_summary.enabled_companies }}</td></tr>
       <tr><td>Discovery interval</td><td>
         {% if discovery_summary.auto_interval %}
           every {{ discovery_summary.discovery_interval_minutes }} min (auto)
         {% else %}
-          every {{ settings.scheduler.discovery_interval_minutes }} min (fixed)
+          fixed schedule
         {% endif %}
       </td></tr>
-      <tr><td>Monitored companies</td><td>{{ discovery_summary.enabled_companies }}</td></tr>
-      <tr><td>Target coverage</td><td>~{{ discovery_summary.target_polls_per_company_per_day }}×/day per company ({{ discovery_summary.runs_per_day }} runs/day, {{ discovery_summary.max_sources_per_run }}/run)</td></tr>
-      <tr><td>Daily summary</td><td>{{ settings.scheduler.daily_summary_time }}</td></tr>
-      <tr><td>Telegram</td><td>{{ 'enabled' if settings.notifications.telegram.enabled else 'disabled' }}</td></tr>
-      <tr><td>Email</td><td>{{ 'enabled' if settings.notifications.email.enabled else 'disabled' }}</td></tr>
+      <tr><td>Daily summary time</td><td>{{ discovery_summary.target_polls_per_company_per_day }}×/day target coverage</td></tr>
     </table>
-    <p class="small muted">Configure channels in <code>config/settings.yaml</code>. Optional Crawl4AI sidecar (<code>docs/CRAWL4AI.md</code>) improves JS career pages — health: <code>/api/crawl4ai/health</code>.</p>
-    <div class="filter-actions mt">
-      <button class="btn" onclick="testNotifications(this)">Send test notification</button>
-      <button class="btn" onclick="fetch('/api/summary/daily/send', {method:'POST'}).then(() => { if (typeof showToast==='function') showToast('Daily summary sent.', 'info'); else alert('Daily summary sent.'); })">Send daily summary</button>
-    </div>
+    <p class="small muted">Manage companies on the <a href="/companies">Companies</a> page.</p>
   </section>
 </div>
 
 <section class="card panel-card">
-  <header class="panel-head"><h2>Job sources</h2></header>
-  <p class="small">Companies are managed on the <a href="/companies">Companies</a> page — add from the catalog or configure any ATS type.</p>
+  <header class="panel-head"><h2>Export</h2></header>
+  <p class="small muted">Download your private Excel workbook (your jobs, applications, and monitored companies only).</p>
+  <a class="btn" href="/api/exports/excel/download">Download my Excel</a>
 </section>
 {% endblock %}
 
@@ -93,12 +128,30 @@ async function testNotifications(btn) {
   try {
     const res = await fetch('/api/notifications/test', {method: 'POST'});
     const d = await res.json();
-    const msg = `Telegram: ${d.telegram_enabled ? (d.telegram_sent ? 'sent' : 'FAILED') : 'disabled'}\nEmail: ${d.email_enabled ? (d.email_sent ? 'sent' : 'FAILED') : 'disabled'}`;
-    if (typeof showToast === 'function') showToast(msg.replace('\n', ' · '), d.telegram_sent || d.email_sent ? 'info' : 'warn', 7000);
+    const parts = [];
+    if (d.telegram_configured) parts.push('Telegram: ' + (d.telegram_sent ? 'sent' : 'FAILED'));
+    else parts.push('Telegram: set your chat ID above');
+    if (d.email_configured) parts.push('Email: ' + (d.email_sent ? 'sent to ' + d.email_address : 'FAILED'));
+    else parts.push('Email: add your email in profile');
+    const msg = parts.join(' · ');
+    if (typeof showToast === 'function') showToast(msg, d.telegram_sent || d.email_sent ? 'info' : 'warn', 7000);
     else alert(msg);
   } catch (err) {
     if (typeof showToast === 'function') showToast('Test failed: ' + err, 'err');
     else alert('Test failed: ' + err);
+  } finally { btn.disabled = false; }
+}
+
+async function sendDailySummary(btn) {
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/summary/daily/send', {method: 'POST'});
+    const d = await res.json();
+    const ok = d.telegram || d.email;
+    if (typeof showToast === 'function') showToast(ok ? 'Daily summary sent.' : 'No channel configured.', ok ? 'info' : 'warn');
+    else alert(ok ? 'Daily summary sent.' : 'No channel configured.');
+  } catch (err) {
+    if (typeof showToast === 'function') showToast('Failed: ' + err, 'err');
   } finally { btn.disabled = false; }
 }
 </script>

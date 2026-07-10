@@ -12,7 +12,7 @@ from urllib.parse import urlencode
 from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from app import company_sources, resume_engine
@@ -24,6 +24,7 @@ from app.config import (
     get_sources_config,
     save_settings,
 )
+from app.deps import get_current_user, require_admin
 from app.discovery_schedule import discovery_schedule_summary, effective_discovery_interval_minutes
 from app.scheduler import refresh_discovery_schedule
 from app.job_visibility import job_age_label, job_status_badge, visible_jobs_filter
@@ -39,9 +40,32 @@ from app.models import (
     Job,
     Recruiter,
     Resume,
-    UserProfile,
+    User,
+    UserJobScore,
     log_activity,
 )
+from app.user_access import (
+    apply_monitor_to_company,
+    attach_user_scores,
+    company_monitor_map,
+    hydrate_job_from_score,
+    monitor_for_user,
+    sync_monitor_from_company,
+    user_job_score,
+)
+from app.user_prefs import get_user_preferences, get_user_profile_dict, save_user_preferences
+from app.users import (
+    ROLE_ADMIN,
+    ROLE_MEMBER,
+    create_session_token,
+    create_user,
+    list_users,
+    max_users,
+    set_user_active,
+    set_user_password,
+    user_count,
+)
+from app.users import authenticate as authenticate_user
 
 router = APIRouter(include_in_schema=False)
 
@@ -79,6 +103,7 @@ def _apply_job_filters(
     company: str,
     source: str,
     high_priority: bool,
+    user_scored: bool = False,
 ):
     q = (q or "").strip()
     location = (location or "").strip()
@@ -102,7 +127,10 @@ def _apply_job_filters(
     if source:
         stmt = stmt.where(Job.source == source)
     if high_priority:
-        stmt = stmt.where(Job.is_high_priority.is_(True))
+        if user_scored:
+            stmt = stmt.where(UserJobScore.is_high_priority.is_(True))
+        else:
+            stmt = stmt.where(Job.is_high_priority.is_(True))
     return stmt
 
 
@@ -136,11 +164,22 @@ def _parse_date(value: str | None) -> datetime | None:
         return None
 
 
+def _activity_logs_query(user: User):
+    stmt = select(ActivityLog).order_by(ActivityLog.timestamp.desc())
+    if user.role != ROLE_ADMIN:
+        stmt = stmt.where(ActivityLog.user_id == user.id)
+    return stmt
+
+
+def _is_admin(user: User) -> bool:
+    return user.role == ROLE_ADMIN
+
+
 @router.get("/login", response_class=HTMLResponse)
 def login_page(request: Request, next: str = "/"):
-    from app.auth import configured_password
+    from app.auth import auth_required
 
-    if not configured_password():
+    if not auth_required():
         return RedirectResponse("/", status_code=303)
     return templates.TemplateResponse(
         request, "login.html", {"error": None, "next_path": next}
@@ -148,25 +187,30 @@ def login_page(request: Request, next: str = "/"):
 
 
 @router.post("/login")
-def login_submit(request: Request, password: str = Form(...), next: str = Form("/")):
-    from app.auth import COOKIE_NAME, configured_password, session_token
-    import hmac as hmac_mod
+def login_submit(
+    request: Request,
+    email: str = Form(...),
+    password: str = Form(...),
+    next: str = Form("/"),
+):
+    from app.auth import COOKIE_NAME, auth_required
+    from app.users import authenticate
 
-    expected = configured_password()
-    if not expected:
+    if not auth_required():
         return RedirectResponse("/", status_code=303)
-    if not hmac_mod.compare_digest(password, expected):
+    user = authenticate(email, password)
+    if user is None:
         return templates.TemplateResponse(
             request,
             "login.html",
-            {"error": "Wrong password.", "next_path": next},
+            {"error": "Invalid email or password.", "next_path": next},
             status_code=401,
         )
     target = next if next.startswith("/") and not next.startswith("//") else "/"
     response = RedirectResponse(target, status_code=303)
     response.set_cookie(
         COOKIE_NAME,
-        session_token(expected),
+        create_session_token(user.id),
         httponly=True,
         samesite="lax",
         max_age=60 * 60 * 24 * 30,
@@ -185,40 +229,44 @@ def logout():
 
 @router.get("/", response_class=HTMLResponse)
 def dashboard(request: Request, db: Session = Depends(get_db)):
-    analytics = compute_analytics(db)
-    monitored_count = db.execute(
-        select(func.count(Company.id)).where(
-            Company.ats_type.isnot(None), Company.enabled.is_(True)
-        )
-    ).scalar() or 0
-    has_cv = db.execute(select(UserProfile)).scalars().first() is not None
-    recent_high = (
+    user = get_current_user(request)
+    analytics = compute_analytics(db, user_id=user.id)
+    from app.user_access import enabled_monitor_count
+
+    monitored_count = enabled_monitor_count(db)
+    has_cv = bool(user.cv_path)
+    visible = visible_jobs_filter()
+    score_join = and_(UserJobScore.job_id == Job.id, UserJobScore.user_id == user.id)
+    recent_high = attach_user_scores(
+        db,
         db.execute(
             select(Job)
-            .where(Job.is_high_priority.is_(True), visible_jobs_filter())
-            .order_by(Job.discovered_at.desc())
+            .join(UserJobScore, score_join)
+            .where(visible, UserJobScore.is_high_priority.is_(True))
+            .order_by(UserJobScore.match_score.desc(), Job.discovered_at.desc())
             .limit(8)
-        )
-        .scalars()
-        .all()
+        ).scalars().all(),
+        user.id,
     )
-    recent_top = (
+    recent_top = attach_user_scores(
+        db,
         db.execute(
             select(Job)
-            .where(visible_jobs_filter())
-            .order_by(Job.match_score.desc(), Job.discovered_at.desc())
+            .join(UserJobScore, score_join)
+            .where(visible)
+            .order_by(UserJobScore.match_score.desc(), Job.discovered_at.desc())
             .limit(8)
-        )
-        .scalars()
-        .all()
+        ).scalars().all(),
+        user.id,
     )
     recent_logs = (
-        db.execute(select(ActivityLog).order_by(ActivityLog.timestamp.desc()).limit(10)).scalars().all()
+        db.execute(_activity_logs_query(user).limit(10)).scalars().all()
     )
     follow_ups = (
         db.execute(
             select(Application)
             .where(
+                Application.user_id == user.id,
                 Application.follow_up_date.isnot(None),
                 Application.status.notin_(["Rejected", "Withdrawn", "Offer"]),
             )
@@ -228,11 +276,9 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         .scalars()
         .all()
     )
-    settings = get_settings()
     discovery_mins = effective_discovery_interval_minutes()
-    discovery_summary = discovery_schedule_summary()
-    profile = get_profile()
-    display_name = (profile.get("full_name") or "").strip()
+    profile = get_user_profile_dict(user)
+    display_name = (profile.get("full_name") or user.display_name or "").strip()
     if display_name:
         display_name = display_name.split()[0]
     return templates.TemplateResponse(
@@ -249,6 +295,8 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
             "has_cv": has_cv,
             "display_name": display_name,
             "discovery_mins": discovery_mins,
+            "current_user": user,
+            "is_admin": user.role == ROLE_ADMIN,
         },
     )
 
@@ -265,16 +313,23 @@ def jobs_page(
     high_priority: str | None = Query(None),
     page: int = 1,
 ):
+    user = get_current_user(request)
     page_size = 25
     min_score_val = _parse_optional_float(min_score)
     high_priority_val = _parse_bool_query(high_priority)
     visible = visible_jobs_filter()
+    score_join = and_(UserJobScore.job_id == Job.id, UserJobScore.user_id == user.id)
     stmt = (
         select(Job)
         .options(joinedload(Job.company))
-        .where(visible, Job.match_score >= min_score_val)
+        .join(UserJobScore, score_join)
+        .where(visible, UserJobScore.match_score >= min_score_val)
     )
-    count_stmt = select(func.count(Job.id)).where(visible, Job.match_score >= min_score_val)
+    count_stmt = (
+        select(func.count(Job.id))
+        .join(UserJobScore, score_join)
+        .where(visible, UserJobScore.match_score >= min_score_val)
+    )
     q = (q or "").strip()
     location = (location or "").strip()
     company = (company or "").strip()
@@ -286,6 +341,7 @@ def jobs_page(
         company=company,
         source=source,
         high_priority=high_priority_val,
+        user_scored=True,
     )
     count_stmt = _apply_job_filters(
         count_stmt,
@@ -294,16 +350,19 @@ def jobs_page(
         company=company,
         source=source,
         high_priority=high_priority_val,
+        user_scored=True,
     )
     total = db.execute(count_stmt).scalar() or 0
-    jobs = (
+    jobs = attach_user_scores(
+        db,
         db.execute(
-            stmt.order_by(Job.match_score.desc(), Job.discovered_at.desc())
+            stmt.order_by(UserJobScore.match_score.desc(), Job.discovered_at.desc())
             .limit(page_size)
             .offset((page - 1) * page_size)
         )
         .scalars()
-        .all()
+        .all(),
+        user.id,
     )
     filters = {
         "q": q,
@@ -333,13 +392,14 @@ def jobs_page(
 
 
 @router.post("/jobs/import-linkedin")
-def jobs_import_linkedin(url: str = Form(...)):
+def jobs_import_linkedin(request: Request, url: str = Form(...)):
     from fastapi.responses import JSONResponse
 
     from app.linkedin_import import import_linkedin_job
 
+    user = get_current_user(request)
     try:
-        result = import_linkedin_job(url)
+        result = import_linkedin_job(url, user_id=user.id)
         return JSONResponse(result)
     except ValueError as exc:
         return JSONResponse({"detail": str(exc)}, status_code=400)
@@ -349,13 +409,22 @@ def jobs_import_linkedin(url: str = Form(...)):
 
 @router.get("/jobs/{job_id}", response_class=HTMLResponse)
 def job_detail(request: Request, job_id: int, db: Session = Depends(get_db)):
+    user = get_current_user(request)
     job = db.get(Job, job_id)
     if job is None:
         return RedirectResponse("/jobs", status_code=303)
+    score = user_job_score(db, user.id, job_id)
+    if score is None:
+        return RedirectResponse("/jobs", status_code=303)
+    hydrate_job_from_score(job, score)
     breakdown = json.loads(job.score_breakdown) if job.score_breakdown else []
     jd_breakdown = json.loads(job.jd_fit_breakdown) if job.jd_fit_breakdown else []
     resumes = (
-        db.execute(select(Resume).where(Resume.job_id == job_id).order_by(Resume.created_at.desc()))
+        db.execute(
+            select(Resume)
+            .where(Resume.job_id == job_id, Resume.user_id == user.id)
+            .order_by(Resume.created_at.desc())
+        )
         .scalars()
         .all()
     )
@@ -363,7 +432,9 @@ def job_detail(request: Request, job_id: int, db: Session = Depends(get_db)):
     cover_letters = [r for r in resumes if r.kind == "cover_letter"]
     prep_row = (
         db.execute(
-            select(InterviewPrep).where(InterviewPrep.job_id == job_id).order_by(InterviewPrep.created_at.desc())
+            select(InterviewPrep)
+            .where(InterviewPrep.job_id == job_id, InterviewPrep.user_id == user.id)
+            .order_by(InterviewPrep.created_at.desc())
         )
         .scalars()
         .first()
@@ -376,20 +447,18 @@ def job_detail(request: Request, job_id: int, db: Session = Depends(get_db)):
             .scalars()
             .all()
         )
-    has_master = False
-    has_profile = False
-    profile_row = db.execute(select(UserProfile)).scalars().first()
-    if profile_row:
-        has_master = resume_engine.resolve_master_docx_path(
-            profile_row.cv_path,
-            profile_json=profile_row.profile_json,
-        ) is not None
-    if profile_row and (profile_row.profile_json or profile_row.full_name):
-        has_profile = True
-    if get_profile().get("full_name"):
-        has_profile = True
+    has_master = resume_engine.resolve_master_docx_path(
+        user.cv_path,
+        profile_json=user.profile_json,
+    ) is not None
+    profile = get_user_profile_dict(user)
+    has_profile = bool(profile.get("full_name") or user.profile_json)
     is_tracked = (
-        db.execute(select(Application.id).where(Application.job_id == job_id)).scalar()
+        db.execute(
+            select(Application.id).where(
+                Application.job_id == job_id, Application.user_id == user.id
+            )
+        ).scalar()
         is not None
     )
     status_badge = job_status_badge(job, is_tracked=is_tracked)
@@ -414,30 +483,37 @@ def job_detail(request: Request, job_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/jobs/{job_id}/track")
-def track_job(job_id: int):
+def track_job(request: Request, job_id: int):
+    user = get_current_user(request)
     with session_scope() as session:
         job = session.get(Job, job_id)
-        if job is not None:
+        if job is not None and user_job_score(session, user.id, job_id) is not None:
             existing = session.execute(
-                select(Application).where(Application.job_id == job_id)
+                select(Application).where(
+                    Application.job_id == job_id, Application.user_id == user.id
+                )
             ).scalars().first()
             if existing is None:
                 session.add(
                     Application(
+                        user_id=user.id,
                         job_id=job.id,
                         company_name=job.company.name if job.company else None,
                         role=job.title,
                         status="Planned",
                     )
                 )
+                log_activity(session, "app", f"Tracked job #{job.id}", user_id=user.id)
     return RedirectResponse("/applications", status_code=303)
 
 
 @router.get("/applications", response_class=HTMLResponse)
 def applications_page(request: Request, db: Session = Depends(get_db), status: str = ""):
+    user = get_current_user(request)
     stmt = (
         select(Application)
         .options(joinedload(Application.job))
+        .where(Application.user_id == user.id)
         .order_by(Application.updated_at.desc())
     )
     if status:
@@ -457,6 +533,7 @@ def applications_page(request: Request, db: Session = Depends(get_db), status: s
 
 @router.post("/applications/new")
 def application_create(
+    request: Request,
     company_name: str = Form(""),
     role: str = Form(""),
     status: str = Form("Planned"),
@@ -464,9 +541,11 @@ def application_create(
     follow_up_date: str = Form(""),
     notes: str = Form(""),
 ):
+    user = get_current_user(request)
     with session_scope() as session:
         session.add(
             Application(
+                user_id=user.id,
                 company_name=company_name or None,
                 role=role or None,
                 status=status if status in APPLICATION_STATUSES else "Planned",
@@ -475,11 +554,13 @@ def application_create(
                 notes=notes or None,
             )
         )
+        log_activity(session, "app", f"Application created: {company_name}", user_id=user.id)
     return RedirectResponse("/applications", status_code=303)
 
 
 @router.post("/applications/{app_id}/update")
 def application_update(
+    request: Request,
     app_id: int,
     company_name: str = Form(""),
     role: str = Form(""),
@@ -490,9 +571,10 @@ def application_update(
     outcome: str = Form(""),
     notes: str = Form(""),
 ):
+    user = get_current_user(request)
     with session_scope() as session:
         application = session.get(Application, app_id)
-        if application is not None:
+        if application is not None and application.user_id == user.id:
             application.company_name = company_name or None
             application.role = role or None
             if status in APPLICATION_STATUSES:
@@ -502,38 +584,57 @@ def application_update(
             application.interview_stages = interview_stages or None
             application.outcome = outcome or None
             application.notes = notes or None
+            log_activity(session, "app", f"Application updated: {application.company_name}", user_id=user.id)
     return RedirectResponse("/applications", status_code=303)
 
 
 @router.post("/applications/{app_id}/delete")
-def application_delete(app_id: int):
+def application_delete(request: Request, app_id: int):
+    user = get_current_user(request)
     with session_scope() as session:
         application = session.get(Application, app_id)
-        if application is not None:
+        if application is not None and application.user_id == user.id:
             session.delete(application)
     return RedirectResponse("/applications", status_code=303)
 
 
 @router.get("/companies", response_class=HTMLResponse)
 def companies_page(request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request)
+    monitors = company_monitor_map(db, user.id)
     companies = db.execute(select(Company).order_by(Company.name)).scalars().all()
+    display_companies = []
     stats = {}
     for company in companies:
+        monitor = monitors.get(company.id)
+        display = apply_monitor_to_company(company, monitor)
+        display_companies.append(display)
         active_jobs = [j for j in company.jobs if j.is_active]
+        user_scores = {
+            s.job_id: s
+            for s in db.execute(
+                select(UserJobScore).where(
+                    UserJobScore.user_id == user.id,
+                    UserJobScore.job_id.in_([j.id for j in active_jobs] or [0]),
+                )
+            ).scalars()
+        }
+        scored_jobs = [hydrate_job_from_score(j, user_scores[j.id]) for j in active_jobs if j.id in user_scores]
         applied = db.execute(
-            select(func.count(Application.id)).where(Application.company_name == company.name)
+            select(func.count(Application.id)).where(
+                Application.company_name == company.name,
+                Application.user_id == user.id,
+            )
         ).scalar() or 0
         stats[company.id] = {
-            "active_jobs": len(active_jobs),
-            "high_priority": sum(1 for j in active_jobs if j.is_high_priority),
+            "active_jobs": len(scored_jobs),
+            "high_priority": sum(1 for j in scored_jobs if j.is_high_priority),
             "top_locations": sorted(
-                {(j.location or "").split(",")[0].strip() for j in active_jobs if j.location}
+                {(j.location or "").split(",")[0].strip() for j in scored_jobs if j.location}
             )[:4],
             "applications": applied,
-            "avg_score": round(
-                sum(j.match_score for j in active_jobs) / len(active_jobs), 1
-            )
-            if active_jobs
+            "avg_score": round(sum(j.match_score for j in scored_jobs) / len(scored_jobs), 1)
+            if scored_jobs
             else 0,
             "ats_config": company_sources.parse_ats_config(company),
         }
@@ -544,7 +645,7 @@ def companies_page(request: Request, db: Session = Depends(get_db)):
         "companies.html",
         {
             "active": "companies",
-            "companies": companies,
+            "companies": display_companies,
             "stats": stats,
             "catalog": catalog.get("sectors", []),
             "existing_names": existing_names,
@@ -613,6 +714,7 @@ def _apply_company_form(
 
 @router.post("/companies/new")
 def company_create(
+    request: Request,
     name: str = Form(...),
     sector: str = Form(""),
     country: str = Form(""),
@@ -634,6 +736,7 @@ def company_create(
     recruiter_search_enabled: bool = Form(False),
     notes: str = Form(""),
 ):
+    user = get_current_user(request)
     with session_scope() as session:
         company = session.execute(
             select(Company).where(Company.name == name.strip())
@@ -652,13 +755,15 @@ def company_create(
             priority=priority, enabled=enabled,
             recruiter_search_enabled=recruiter_search_enabled, notes=notes,
         )
-        log_activity(session, "config", f"Company added/updated: {name}")
+        sync_monitor_from_company(session, user.id, company)
+        log_activity(session, "config", f"Company added/updated: {name}", user_id=user.id)
     refresh_discovery_schedule()
     return RedirectResponse("/companies", status_code=303)
 
 
 @router.post("/companies/{company_id}/update")
 def company_update(
+    request: Request,
     company_id: int,
     name: str = Form(...),
     sector: str = Form(""),
@@ -681,6 +786,7 @@ def company_update(
     recruiter_search_enabled: bool = Form(False),
     notes: str = Form(""),
 ):
+    user = get_current_user(request)
     with session_scope() as session:
         company = session.get(Company, company_id)
         if company is not None:
@@ -695,44 +801,46 @@ def company_update(
                 priority=priority, enabled=enabled,
                 recruiter_search_enabled=recruiter_search_enabled, notes=notes,
             )
-            log_activity(session, "config", f"Company updated: {company.name}")
+            sync_monitor_from_company(session, user.id, company)
+            log_activity(session, "config", f"Company updated: {company.name}", user_id=user.id)
     refresh_discovery_schedule()
     return RedirectResponse("/companies", status_code=303)
 
 
 @router.post("/companies/{company_id}/toggle")
-def company_toggle(company_id: int):
+def company_toggle(request: Request, company_id: int):
+    user = get_current_user(request)
     with session_scope() as session:
         company = session.get(Company, company_id)
         if company is not None:
-            company.enabled = not company.enabled
+            monitor = sync_monitor_from_company(session, user.id, company)
+            monitor.enabled = not monitor.enabled
             log_activity(
                 session,
                 "config",
-                f"Company {'enabled' if company.enabled else 'disabled'}: {company.name}",
+                f"Company {'enabled' if monitor.enabled else 'disabled'}: {company.name}",
+                user_id=user.id,
             )
     refresh_discovery_schedule()
     return RedirectResponse("/companies", status_code=303)
 
 
 @router.post("/companies/{company_id}/delete")
-def company_delete(company_id: int):
+def company_delete(request: Request, company_id: int):
+    user = get_current_user(request)
     with session_scope() as session:
         company = session.get(Company, company_id)
-        if company is not None:
-            if company.jobs or company.recruiters:
-                # Keep the employer-intelligence record; just stop monitoring.
-                company.ats_type = None
-                company.enabled = False
-                log_activity(session, "config", f"Company unmonitored: {company.name}")
-            else:
-                session.delete(company)
-                log_activity(session, "config", f"Company deleted: {company.name}")
+        monitor = monitor_for_user(session, user.id, company_id) if company else None
+        if company is not None and monitor is not None:
+            monitor.enabled = False
+            log_activity(session, "config", f"Company unmonitored: {company.name}", user_id=user.id)
+    refresh_discovery_schedule()
     return RedirectResponse("/companies", status_code=303)
 
 
 @router.post("/companies/catalog/add")
-def company_catalog_add(sector: str = Form(...), name: str = Form(...)):
+def company_catalog_add(request: Request, sector: str = Form(...), name: str = Form(...)):
+    user = get_current_user(request)
     catalog = get_company_catalog()
     entry = None
     for sec in catalog.get("sectors", []):
@@ -762,12 +870,14 @@ def company_catalog_add(sector: str = Form(...), name: str = Form(...)):
             # user can validate them with Test Connection first.
             company.enabled = not entry.get("caveat")
             company.notes = entry.get("caveat") or company.notes
-            log_activity(session, "config", f"Company added from catalog: {entry['name']}")
+            sync_monitor_from_company(session, user.id, company)
+            log_activity(session, "config", f"Company added from catalog: {entry['name']}", user_id=user.id)
     return RedirectResponse("/companies", status_code=303)
 
 
 @router.post("/companies/catalog/add-sector")
-def company_catalog_add_sector(sector: str = Form(...)):
+def company_catalog_add_sector(request: Request, sector: str = Form(...)):
+    user = get_current_user(request)
     catalog = get_company_catalog()
     added = 0
     with session_scope() as session:
@@ -795,8 +905,9 @@ def company_catalog_add_sector(sector: str = Form(...)):
                 )
                 company.enabled = not item.get("caveat")
                 company.notes = item.get("caveat") or company.notes
+                sync_monitor_from_company(session, user.id, company)
                 added += 1
-            log_activity(session, "config", f"Catalog bulk add: {added} companies from {sector}")
+            log_activity(session, "config", f"Catalog bulk add: {added} companies from {sector}", user_id=user.id)
             break
     refresh_discovery_schedule()
     return RedirectResponse("/companies", status_code=303)
@@ -804,10 +915,11 @@ def company_catalog_add_sector(sector: str = Form(...)):
 
 @router.get("/analytics", response_class=HTMLResponse)
 def analytics_page(request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request)
     return templates.TemplateResponse(
         request,
         "analytics.html",
-        {"active": "analytics", "analytics": compute_analytics(db)},
+        {"active": "analytics", "analytics": compute_analytics(db, user_id=user.id)},
     )
 
 
@@ -865,16 +977,16 @@ def recruiter_delete(rec_id: int):
 
 @router.get("/profile", response_class=HTMLResponse)
 def profile_page(request: Request, db: Session = Depends(get_db)):
-    profile = get_profile()
-    row = db.execute(select(UserProfile)).scalars().first()
-    parsed = json.loads(row.profile_json) if row and row.profile_json else None
+    user = get_current_user(request)
+    profile = get_user_profile_dict(user)
+    parsed = json.loads(user.profile_json) if user.profile_json else None
     return templates.TemplateResponse(
         request,
         "profile.html",
         {
             "active": "profile",
             "profile": profile,
-            "cv_path": row.cv_path if row else None,
+            "cv_path": user.cv_path,
             "parsed": parsed,
         },
     )
@@ -882,23 +994,26 @@ def profile_page(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request):
-    settings = get_settings(refresh=True)
-    sources = get_sources_config(refresh=True)
+    user = get_current_user(request)
+    prefs = get_user_preferences(user)
     discovery_summary = discovery_schedule_summary()
     return templates.TemplateResponse(
         request,
         "settings.html",
         {
             "active": "settings",
-            "settings": settings,
-            "sources": sources,
+            "settings": {"profile": prefs.get("profile", {}), "scoring": prefs.get("scoring", {}), "notifications": prefs.get("notifications", {})},
+            "sources": get_sources_config(refresh=True) if user.role == ROLE_ADMIN else {},
             "discovery_summary": discovery_summary,
+            "is_admin": user.role == ROLE_ADMIN,
+            "server_settings": get_settings(refresh=True) if user.role == ROLE_ADMIN else None,
         },
     )
 
 
 @router.post("/settings/profile")
 def settings_profile_update(
+    request: Request,
     full_name: str = Form(""),
     email: str = Form(""),
     phone: str = Form(""),
@@ -912,11 +1027,12 @@ def settings_profile_update(
     preferred_companies: str = Form(""),
     avoided_companies: str = Form(""),
 ):
+    user = get_current_user(request)
     def as_list(raw: str) -> list[str]:
         return [item.strip() for item in raw.split(",") if item.strip()]
 
-    settings = get_settings(refresh=True)
-    profile = settings.get("profile", {}) or {}
+    prefs = get_user_preferences(user)
+    profile = prefs.get("profile", {}) or {}
     profile.update(
         {
             "full_name": full_name,
@@ -933,22 +1049,125 @@ def settings_profile_update(
             "avoided_companies": as_list(avoided_companies),
         }
     )
-    settings["profile"] = profile
-    save_settings(settings)
-    # Re-rank existing jobs for the updated preferences.
+    prefs["profile"] = profile
+    save_user_preferences(user.id, prefs)
     from app.pipeline import rescore_all_jobs
 
-    rescore_all_jobs()
+    rescore_all_jobs(user.id)
+    return RedirectResponse("/settings", status_code=303)
+
+
+@router.post("/settings/notifications")
+def settings_notifications_update(
+    request: Request,
+    telegram_chat_id: str = Form(""),
+    telegram_enabled: str | None = Form(None),
+    email_enabled: str | None = Form(None),
+    high_priority: str | None = Form(None),
+    run_summary: str | None = Form(None),
+    run_summary_email: str | None = Form(None),
+    daily_summary: str | None = Form(None),
+    followup_reminders: str | None = Form(None),
+):
+    user = get_current_user(request)
+    prefs = get_user_preferences(user)
+    prefs["notifications"] = {
+        "telegram_chat_id": telegram_chat_id.strip(),
+        "telegram_enabled": telegram_enabled is not None,
+        "email_enabled": email_enabled is not None,
+        "high_priority": high_priority is not None,
+        "run_summary": run_summary is not None,
+        "run_summary_email": run_summary_email is not None,
+        "daily_summary": daily_summary is not None,
+        "followup_reminders": followup_reminders is not None,
+    }
+    save_user_preferences(user.id, prefs)
     return RedirectResponse("/settings", status_code=303)
 
 
 @router.get("/activity", response_class=HTMLResponse)
 def activity_page(request: Request, db: Session = Depends(get_db)):
-    logs = (
-        db.execute(select(ActivityLog).order_by(ActivityLog.timestamp.desc()).limit(200)).scalars().all()
-    )
+    user = get_current_user(request)
+    logs = db.execute(_activity_logs_query(user).limit(200)).scalars().all()
     return templates.TemplateResponse(
         request,
         "activity.html",
-        {"active": "activity", "logs": logs},
+        {"active": "activity", "logs": logs, "is_admin": _is_admin(user)},
     )
+
+
+@router.get("/admin/users", response_class=HTMLResponse)
+def admin_users_page(request: Request):
+    admin = require_admin(request)
+    return templates.TemplateResponse(
+        request,
+        "admin_users.html",
+        {
+            "active": "admin",
+            "users": list_users(),
+            "max_users": max_users(),
+            "user_count": user_count(),
+            "current_user": admin,
+        },
+    )
+
+
+@router.post("/admin/users/create")
+def admin_create_user(
+    request: Request,
+    email: str = Form(...),
+    password: str = Form(...),
+    display_name: str = Form(""),
+    role: str = Form(ROLE_MEMBER),
+):
+    admin = require_admin(request)
+    try:
+        create_user(
+            email=email,
+            password=password,
+            display_name=display_name,
+            role=role,
+            actor_user_id=admin.id,
+        )
+    except ValueError as exc:
+        return templates.TemplateResponse(
+            request,
+            "admin_users.html",
+            {
+                "active": "admin",
+                "users": list_users(),
+                "max_users": max_users(),
+                "user_count": user_count(),
+                "current_user": admin,
+                "error": str(exc),
+            },
+            status_code=400,
+        )
+    return RedirectResponse("/admin/users", status_code=303)
+
+
+@router.post("/admin/users/{user_id}/password")
+def admin_reset_password(
+    request: Request,
+    user_id: int,
+    new_password: str = Form(...),
+):
+    admin = require_admin(request)
+    try:
+        set_user_password(user_id, new_password, actor_user_id=admin.id)
+    except ValueError as exc:
+        return RedirectResponse(f"/admin/users?error={exc}", status_code=303)
+    return RedirectResponse("/admin/users", status_code=303)
+
+
+@router.post("/admin/users/{user_id}/toggle")
+def admin_toggle_user(request: Request, user_id: int):
+    admin = require_admin(request)
+    users = list_users()
+    target = next((u for u in users if u["id"] == user_id), None)
+    if target is not None:
+        try:
+            set_user_active(user_id, not target["is_active"], actor_user_id=admin.id)
+        except ValueError:
+            pass
+    return RedirectResponse("/admin/users", status_code=303)
