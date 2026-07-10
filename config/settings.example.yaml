@@ -182,9 +182,9 @@ notifications:
   followup_reminders: true
   telegram:
     enabled: false
-    # Create a bot with @BotFather, then set the token and your chat id.
+    # Shared bot token — each user sets their own chat_id in Settings.
     bot_token: ""
-    chat_id: ""
+    # chat_id is per-user (Settings page), not global.
   email:
     enabled: false
     smtp_host: smtp.gmail.com

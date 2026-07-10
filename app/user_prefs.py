@@ -30,6 +30,27 @@ def user_resumes_dir(user_id: int) -> Path:
     return path
 
 
+def user_exports_dir(user_id: int) -> Path:
+    path = user_data_dir(user_id) / "exports"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _default_user_notifications() -> dict[str, Any]:
+    """Per-user notification prefs (chat ID, channels). Bot token stays in settings.yaml."""
+    global_cfg = get_settings().get("notifications", {}) or {}
+    return {
+        "telegram_chat_id": "",
+        "telegram_enabled": True,
+        "email_enabled": True,
+        "high_priority": True,
+        "run_summary": bool(global_cfg.get("run_summary", True)),
+        "run_summary_email": bool(global_cfg.get("run_summary_email", False)),
+        "daily_summary": True,
+        "followup_reminders": bool(global_cfg.get("followup_reminders", True)),
+    }
+
+
 def _default_preferences() -> dict[str, Any]:
     settings = get_settings()
     profile = dict(get_profile())
@@ -37,7 +58,7 @@ def _default_preferences() -> dict[str, Any]:
     return {
         "profile": profile,
         "scoring": scoring,
-        "notifications": dict(settings.get("notifications", {}) or {}),
+        "notifications": _default_user_notifications(),
     }
 
 
@@ -51,7 +72,9 @@ def get_user_preferences(user: User) -> dict[str, Any]:
                 if data.get("scoring"):
                     base["scoring"] = data["scoring"]
                 if data.get("notifications"):
-                    base["notifications"] = data["notifications"]
+                    merged = _default_user_notifications()
+                    merged.update(data["notifications"])
+                    base["notifications"] = merged
                 return base
         except json.JSONDecodeError:
             pass
@@ -99,6 +122,15 @@ def scoring_profile_for_user(user: User) -> dict[str, Any]:
 
 def scoring_config_for_user(user: User) -> dict[str, Any]:
     return get_user_preferences(user).get("scoring") or {}
+
+
+def notification_config_for_user(user: User) -> dict[str, Any]:
+    return get_user_preferences(user).get("notifications") or _default_user_notifications()
+
+
+def user_notification_email(user: User) -> str:
+    profile = get_user_profile_dict(user)
+    return str(profile.get("email") or user.email or "").strip().lower()
 
 
 def migrate_legacy_cv_to_user(user_id: int, legacy_path: str | None) -> None:

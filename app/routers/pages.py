@@ -164,6 +164,17 @@ def _parse_date(value: str | None) -> datetime | None:
         return None
 
 
+def _activity_logs_query(user: User):
+    stmt = select(ActivityLog).order_by(ActivityLog.timestamp.desc())
+    if user.role != ROLE_ADMIN:
+        stmt = stmt.where(ActivityLog.user_id == user.id)
+    return stmt
+
+
+def _is_admin(user: User) -> bool:
+    return user.role == ROLE_ADMIN
+
+
 @router.get("/login", response_class=HTMLResponse)
 def login_page(request: Request, next: str = "/"):
     from app.auth import auth_required
@@ -249,14 +260,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         user.id,
     )
     recent_logs = (
-        db.execute(
-            select(ActivityLog)
-            .where(or_(ActivityLog.user_id == user.id, ActivityLog.user_id.is_(None)))
-            .order_by(ActivityLog.timestamp.desc())
-            .limit(10)
-        )
-        .scalars()
-        .all()
+        db.execute(_activity_logs_query(user).limit(10)).scalars().all()
     )
     follow_ups = (
         db.execute(
@@ -1053,23 +1057,42 @@ def settings_profile_update(
     return RedirectResponse("/settings", status_code=303)
 
 
+@router.post("/settings/notifications")
+def settings_notifications_update(
+    request: Request,
+    telegram_chat_id: str = Form(""),
+    telegram_enabled: str | None = Form(None),
+    email_enabled: str | None = Form(None),
+    high_priority: str | None = Form(None),
+    run_summary: str | None = Form(None),
+    run_summary_email: str | None = Form(None),
+    daily_summary: str | None = Form(None),
+    followup_reminders: str | None = Form(None),
+):
+    user = get_current_user(request)
+    prefs = get_user_preferences(user)
+    prefs["notifications"] = {
+        "telegram_chat_id": telegram_chat_id.strip(),
+        "telegram_enabled": telegram_enabled is not None,
+        "email_enabled": email_enabled is not None,
+        "high_priority": high_priority is not None,
+        "run_summary": run_summary is not None,
+        "run_summary_email": run_summary_email is not None,
+        "daily_summary": daily_summary is not None,
+        "followup_reminders": followup_reminders is not None,
+    }
+    save_user_preferences(user.id, prefs)
+    return RedirectResponse("/settings", status_code=303)
+
+
 @router.get("/activity", response_class=HTMLResponse)
 def activity_page(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request)
-    logs = (
-        db.execute(
-            select(ActivityLog)
-            .where(or_(ActivityLog.user_id == user.id, ActivityLog.user_id.is_(None)))
-            .order_by(ActivityLog.timestamp.desc())
-            .limit(200)
-        )
-        .scalars()
-        .all()
-    )
+    logs = db.execute(_activity_logs_query(user).limit(200)).scalars().all()
     return templates.TemplateResponse(
         request,
         "activity.html",
-        {"active": "activity", "logs": logs},
+        {"active": "activity", "logs": logs, "is_admin": _is_admin(user)},
     )
 
 

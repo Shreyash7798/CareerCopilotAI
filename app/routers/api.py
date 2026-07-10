@@ -46,7 +46,6 @@ from app.user_access import (
     user_job_score,
 )
 from app.user_prefs import get_user_preferences, get_user_profile_dict, save_user_preferences, user_cv_dir
-from app.users import list_users, max_users, user_count
 from app.notifications import build_daily_summary, send_daily_summary, send_test_notification
 from app.pipeline import rescore_all_jobs, run_pipeline
 from app.startup import (
@@ -868,40 +867,55 @@ def api_download_resume(request: Request, resume_id: int, fmt: str = "docx", db:
 
 
 @router.post("/exports/excel")
-def api_export_excel():
-    path = export_excel()
+def api_export_excel(request: Request):
+    user = get_current_user(request)
+    path = export_excel(user.id)
     return {"path": str(path)}
 
 
 @router.get("/exports/excel/download")
-def api_download_excel():
-    path = export_excel()
-    return FileResponse(str(path), filename=Path(str(path)).name)
+def api_download_excel(request: Request):
+    user = get_current_user(request)
+    path = export_excel(user.id)
+    return FileResponse(str(path), filename=f"careercopilot_{user.id}.xlsx")
 
 
 @router.post("/exports/google-sheets")
-def api_export_google_sheets():
-    spreadsheet_id = export_google_sheets()
+def api_export_google_sheets(request: Request):
+    user = get_current_user(request)
+    spreadsheet_id = export_google_sheets(user.id)
     if not spreadsheet_id:
         return {"status": "disabled"}
     return {"status": "synced", "spreadsheet_id": spreadsheet_id}
 
 
 @router.get("/summary/daily")
-def api_daily_summary():
-    return {"summary": build_daily_summary()}
+def api_daily_summary(request: Request):
+    user = get_current_user(request)
+    return {"summary": build_daily_summary(user.id)}
 
 
 @router.post("/summary/daily/send")
-def api_send_daily_summary():
-    send_daily_summary()
-    return {"status": "sent"}
+def api_send_daily_summary(request: Request):
+    user = get_current_user(request)
+    from app.notifications import build_daily_summary, deliver_to_user
+
+    text = build_daily_summary(user.id)
+    outcome = deliver_to_user(user, "CareerCopilot daily summary", text)
+    with session_scope() as session:
+        log_activity(
+            session,
+            "notify",
+            f"Daily summary sent manually (telegram={outcome['telegram']}, email={outcome['email']})",
+            user_id=user.id,
+        )
+    return {"status": "sent", **outcome}
 
 
 @router.post("/notifications/test")
-def api_test_notifications():
-    """Send a test message on all configured channels and report the outcome."""
-    return send_test_notification()
+def api_test_notifications(request: Request):
+    user = get_current_user(request)
+    return send_test_notification(user)
 
 
 # ---------------------------------------------------------------- analytics

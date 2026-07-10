@@ -1,5 +1,5 @@
-"""Exports (spec section 14): Excel workbook with Jobs / Companies /
-Recruiters / Applications sheets, plus optional Google Sheets sync."""
+"""Exports (spec section 14): per-user Excel workbook with Jobs / Companies /
+Recruiters / Applications sheets, plus optional Google Sheets sync (admin)."""
 
 from __future__ import annotations
 
@@ -7,26 +7,34 @@ import logging
 from pathlib import Path
 
 import pandas as pd
-from sqlalchemy import select
+from sqlalchemy import and_, select
 
 from app.config import PROJECT_ROOT, get_settings
 from app.db import session_scope
-from app.models import Application, Company, Job, Recruiter
+from app.models import Application, Company, Job, Recruiter, UserCompanyMonitor, UserJobScore
+from app.user_access import active_user_ids
+from app.user_prefs import user_exports_dir
 
 logger = logging.getLogger(__name__)
 
 
-def _jobs_frame(session) -> pd.DataFrame:
+def _jobs_frame(session, user_id: int) -> pd.DataFrame:
+    score_join = and_(UserJobScore.job_id == Job.id, UserJobScore.user_id == user_id)
     rows = []
-    for job in session.execute(select(Job).order_by(Job.match_score.desc())).scalars():
+    for job, score in session.execute(
+        select(Job, UserJobScore)
+        .join(UserJobScore, score_join)
+        .order_by(UserJobScore.match_score.desc())
+    ).all():
         rows.append(
             {
                 "ID": job.id,
                 "Company": job.company.name if job.company else "",
                 "Title": job.title,
                 "Location": job.location,
-                "Score": job.match_score,
-                "High Priority": "Yes" if job.is_high_priority else "",
+                "Score": score.match_score,
+                "JD Fit": score.jd_fit_score,
+                "High Priority": "Yes" if score.is_high_priority else "",
                 "Source": job.source,
                 "Posted": job.posted_at,
                 "Discovered": job.discovered_at,
@@ -36,27 +44,61 @@ def _jobs_frame(session) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _companies_frame(session) -> pd.DataFrame:
+def _companies_frame(session, user_id: int) -> pd.DataFrame:
     rows = []
-    for company in session.execute(select(Company).order_by(Company.name)).scalars():
-        active = sum(1 for j in company.jobs if j.is_active)
+    monitors = (
+        session.execute(
+            select(UserCompanyMonitor).where(UserCompanyMonitor.user_id == user_id)
+        )
+        .scalars()
+        .all()
+    )
+    for monitor in monitors:
+        company = session.get(Company, monitor.company_id)
+        if company is None:
+            continue
+        active = sum(
+            1
+            for s, j in session.execute(
+                select(UserJobScore, Job)
+                .join(Job, Job.id == UserJobScore.job_id)
+                .where(
+                    UserJobScore.user_id == user_id,
+                    Job.company_id == company.id,
+                    Job.is_active.is_(True),
+                )
+            ).all()
+        )
         rows.append(
             {
                 "ID": company.id,
                 "Name": company.name,
-                "Preferred": "Yes" if company.is_preferred else "",
-                "Active Jobs": active,
-                "Industry": company.industry,
-                "Website": company.website,
+                "Monitoring": "Yes" if monitor.enabled else "No",
+                "Your Active Jobs": active,
+                "Keywords": monitor.keywords or "",
+                "Priority": monitor.priority,
+                "ATS": company.ats_type or "",
                 "Notes": company.notes,
             }
         )
     return pd.DataFrame(rows)
 
 
-def _recruiters_frame(session) -> pd.DataFrame:
+def _recruiters_frame(session, user_id: int) -> pd.DataFrame:
+    company_ids = [
+        m.company_id
+        for m in session.execute(
+            select(UserCompanyMonitor.company_id).where(UserCompanyMonitor.user_id == user_id)
+        ).scalars()
+    ]
+    if not company_ids:
+        return pd.DataFrame()
     rows = []
-    for rec in session.execute(select(Recruiter).order_by(Recruiter.name)).scalars():
+    for rec in session.execute(
+        select(Recruiter)
+        .where(Recruiter.company_id.in_(company_ids))
+        .order_by(Recruiter.name)
+    ).scalars():
         rows.append(
             {
                 "ID": rec.id,
@@ -72,13 +114,18 @@ def _recruiters_frame(session) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _applications_frame(session) -> pd.DataFrame:
+def _applications_frame(session, user_id: int) -> pd.DataFrame:
     rows = []
-    for app_row in session.execute(select(Application).order_by(Application.updated_at.desc())).scalars():
+    for app_row in session.execute(
+        select(Application)
+        .where(Application.user_id == user_id)
+        .order_by(Application.updated_at.desc())
+    ).scalars():
         rows.append(
             {
                 "ID": app_row.id,
-                "Company": app_row.company_name or (app_row.job.company.name if app_row.job and app_row.job.company else ""),
+                "Company": app_row.company_name
+                or (app_row.job.company.name if app_row.job and app_row.job.company else ""),
                 "Role": app_row.role or (app_row.job.title if app_row.job else ""),
                 "Date Applied": app_row.date_applied,
                 "Status": app_row.status,
@@ -91,39 +138,49 @@ def _applications_frame(session) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def export_excel(path: str | None = None) -> Path:
-    settings = get_settings()
-    excel_cfg = (settings.get("exports", {}) or {}).get("excel", {}) or {}
-    target = Path(path or excel_cfg.get("path", "data/careercopilot.xlsx"))
+def export_excel(user_id: int, path: str | None = None) -> Path:
+    """Write a private Excel export for one user."""
+    target = Path(path) if path else user_exports_dir(user_id) / "careercopilot.xlsx"
     if not target.is_absolute():
         target = PROJECT_ROOT / target
     target.parent.mkdir(parents=True, exist_ok=True)
 
     with session_scope() as session:
         frames = {
-            "Jobs": _jobs_frame(session),
-            "Companies": _companies_frame(session),
-            "Recruiters": _recruiters_frame(session),
-            "Applications": _applications_frame(session),
+            "Jobs": _jobs_frame(session, user_id),
+            "Companies": _companies_frame(session, user_id),
+            "Recruiters": _recruiters_frame(session, user_id),
+            "Applications": _applications_frame(session, user_id),
         }
 
     with pd.ExcelWriter(target, engine="openpyxl") as writer:
         for sheet, frame in frames.items():
             if frame.empty:
                 frame = pd.DataFrame({"info": [f"No {sheet.lower()} yet"]})
-            # Excel cells cap at 32k chars; also strip timezone awareness.
             for col in frame.columns:
                 if frame[col].dtype == object:
                     frame[col] = frame[col].map(
                         lambda v: v[:32000] if isinstance(v, str) else v
                     )
             frame.to_excel(writer, sheet_name=sheet, index=False)
-    logger.info("Excel export written to %s", target)
+    logger.info("Excel export for user %d written to %s", user_id, target)
     return target
 
 
+def export_excel_all_users() -> list[Path]:
+    """Refresh exports for every active user (called after discovery)."""
+    paths: list[Path] = []
+    with session_scope() as session:
+        user_ids = active_user_ids(session)
+    for user_id in user_ids:
+        try:
+            paths.append(export_excel(user_id))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Excel export failed for user %d: %s", user_id, exc)
+    return paths
+
+
 def _prepare_frame(frame: pd.DataFrame) -> list[list]:
-    """Turn a DataFrame into sheet rows with Excel-safe cell values."""
     if frame.empty:
         return []
     out = frame.copy()
@@ -136,8 +193,8 @@ def _prepare_frame(frame: pd.DataFrame) -> list[list]:
     return [list(out.columns), *out.values.tolist()]
 
 
-def export_google_sheets() -> str | None:
-    """Optional sync to Google Sheets (disabled by default). Returns spreadsheet ID."""
+def export_google_sheets(user_id: int) -> str | None:
+    """Optional per-user Google Sheets sync (disabled by default)."""
     settings = get_settings()
     cfg = (settings.get("exports", {}) or {}).get("google_sheets", {}) or {}
     if not cfg.get("enabled"):
@@ -167,22 +224,24 @@ def export_google_sheets() -> str | None:
 
     with session_scope() as session:
         frames = {
-            "Jobs": _jobs_frame(session),
-            "Companies": _companies_frame(session),
-            "Recruiters": _recruiters_frame(session),
-            "Applications": _applications_frame(session),
+            "Jobs": _jobs_frame(session, user_id),
+            "Companies": _companies_frame(session, user_id),
+            "Recruiters": _recruiters_frame(session, user_id),
+            "Applications": _applications_frame(session, user_id),
         }
 
+    suffix = f"_{user_id}"
     for sheet_name, frame in frames.items():
+        tab = f"{sheet_name}{suffix}"
         try:
-            worksheet = spreadsheet.worksheet(sheet_name)
+            worksheet = spreadsheet.worksheet(tab)
         except gspread.WorksheetNotFound:
-            worksheet = spreadsheet.add_worksheet(title=sheet_name, rows=1000, cols=20)
+            worksheet = spreadsheet.add_worksheet(title=tab, rows=1000, cols=20)
         rows = _prepare_frame(frame)
         if not rows:
             rows = [["info"], [f"No {sheet_name.lower()} yet"]]
         worksheet.clear()
         worksheet.update(rows, value_input_option="USER_ENTERED")
 
-    logger.info("Google Sheets export synced to %s", spreadsheet_id)
+    logger.info("Google Sheets export for user %d synced to %s", user_id, spreadsheet_id)
     return spreadsheet_id

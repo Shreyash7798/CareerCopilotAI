@@ -17,7 +17,7 @@ from app import company_sources, notifications
 from app.config import get_settings, get_sources_config, sources_yaml_exists
 from app.db import session_scope
 from app.dedup import dedup_key, is_fuzzy_duplicate
-from app.exporter import export_excel, export_google_sheets
+from app.exporter import export_excel_all_users, export_google_sheets
 from app.models import Application, Company, Job, User, UserCompanyMonitor, log_activity
 from app.normalize import normalize, passes_filters
 from app.job_visibility import is_aged_out, visibility_settings
@@ -450,12 +450,16 @@ def run_pipeline(notify: bool = True, export: bool = True) -> PipelineResult:
     # made since the last run, not just new jobs.
     if export:
         try:
-            export_excel()
+            export_excel_all_users()
         except Exception as exc:  # noqa: BLE001
             result.errors.append(f"excel export: {exc}")
             logger.warning("Excel export failed: %s", exc)
         try:
-            export_google_sheets()
+            from app.user_access import active_user_ids
+
+            with session_scope() as session:
+                for uid in active_user_ids(session):
+                    export_google_sheets(uid)
         except Exception as exc:  # noqa: BLE001
             result.errors.append(f"google sheets export: {exc}")
             logger.warning("Google Sheets export failed: %s", exc)

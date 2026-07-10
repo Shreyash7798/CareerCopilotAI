@@ -53,8 +53,17 @@ def bootstrap_users_if_needed() -> None:
         preferences = {
             "profile": profile_data,
             "scoring": settings.get("scoring", {}) or {},
-            "notifications": settings.get("notifications", {}) or {},
+            "notifications": {},
         }
+        from app.user_prefs import _default_user_notifications
+
+        notif = _default_user_notifications()
+        legacy_chat = str(
+            (settings.get("notifications", {}) or {}).get("telegram", {}).get("chat_id") or ""
+        ).strip()
+        if legacy_chat:
+            notif["telegram_chat_id"] = legacy_chat
+        preferences["notifications"] = notif
 
         admin = User(
             email=admin_email,
