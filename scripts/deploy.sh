@@ -7,7 +7,7 @@ BRANCH="${CAREERCOPILOT_BRANCH:-main}"
 SERVICE="${CAREERCOPILOT_SERVICE:-careercopilot}"
 VENV="${CAREERCOPILOT_VENV:-$APP_DIR/.venv}"
 HEALTH_URL="${CAREERCOPILOT_HEALTH_URL:-http://127.0.0.1:8000/api/version}"
-HEALTH_RETRIES="${CAREERCOPILOT_HEALTH_RETRIES:-15}"
+HEALTH_RETRIES="${CAREERCOPILOT_HEALTH_RETRIES:-30}"
 HEALTH_INTERVAL="${CAREERCOPILOT_HEALTH_INTERVAL:-2}"
 
 log() { echo "[deploy] $*"; }
@@ -132,11 +132,18 @@ else
 fi
 
 UNIT="/etc/systemd/system/${SERVICE}.service"
-if [[ -f "$UNIT" ]] && grep -q 'Restart=on-failure' "$UNIT" 2>/dev/null; then
-  log "Upgrading systemd unit to Restart=always"
-  sudo sed -i 's/Restart=on-failure/Restart=always/' "$UNIT"
-  sudo sed -i 's/RestartSec=5/RestartSec=10/' "$UNIT" 2>/dev/null || true
-  sudo systemctl daemon-reload
+if [[ -f "$UNIT" ]]; then
+  if grep -q 'Restart=on-failure' "$UNIT" 2>/dev/null; then
+    log "Upgrading systemd unit to Restart=always"
+    sudo sed -i 's/Restart=on-failure/Restart=always/' "$UNIT"
+    sudo sed -i 's/RestartSec=5/RestartSec=10/' "$UNIT" 2>/dev/null || true
+    sudo systemctl daemon-reload
+  fi
+  if ! grep -q 'StartLimitBurst' "$UNIT" 2>/dev/null; then
+    log "Adding systemd start limits (recover from crash loops)"
+    sudo sed -i '/\[Service\]/a StartLimitIntervalSec=300\nStartLimitBurst=10' "$UNIT"
+    sudo systemctl daemon-reload
+  fi
 fi
 
 log "Waiting for $HEALTH_URL (up to $((HEALTH_RETRIES * HEALTH_INTERVAL))s)..."
@@ -161,3 +168,10 @@ if [[ -z "${VERSION:-}" ]]; then
 fi
 
 log "Deploy complete: $AFTER"
+
+chmod +x "$APP_DIR/scripts/health-watchdog.sh" 2>/dev/null || true
+WATCHDOG_LINE="* * * * * bash $APP_DIR/scripts/health-watchdog.sh >> $APP_DIR/data/watchdog.log 2>&1"
+if ! crontab -l 2>/dev/null | grep -qF "health-watchdog.sh"; then
+  log "Installing health watchdog (auto-recover from 502)"
+  (crontab -l 2>/dev/null || true; echo "$WATCHDOG_LINE") | crontab -
+fi

@@ -84,9 +84,15 @@ curl -fsS -X POST http://127.0.0.1:8000/api/quick-start >/dev/null \
 
 # Cron auto-pull fallback (every 5 min)
 CRON_LINE="*/5 * * * * cd $APP_DIR && ./scripts/deploy.sh >> $APP_DIR/data/deploy.log 2>&1"
+WATCHDOG_LINE="* * * * * bash $APP_DIR/scripts/health-watchdog.sh >> $APP_DIR/data/watchdog.log 2>&1"
 if ! crontab -l 2>/dev/null | grep -qF "scripts/deploy.sh"; then
   log "Installing cron auto-deploy"
   (crontab -l 2>/dev/null || true; echo "$CRON_LINE") | crontab -
+fi
+if ! crontab -l 2>/dev/null | grep -qF "health-watchdog.sh"; then
+  log "Installing health watchdog (auto-recover from 502)"
+  chmod +x "$APP_DIR/scripts/health-watchdog.sh" 2>/dev/null || true
+  (crontab -l 2>/dev/null || true; echo "$WATCHDOG_LINE") | crontab -
 fi
 
 PUBLIC_IP=$(curl -fsS -H Metadata:true http://169.254.169.254/opc/v1/instance/metadata/public_ip 2>/dev/null || echo "161.118.184.228")
