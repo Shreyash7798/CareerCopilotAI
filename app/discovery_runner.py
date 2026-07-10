@@ -75,11 +75,15 @@ def run_discovery_subprocess() -> dict:
         return {"started": False, "reason": "already_running"}
 
     _ensure_data_dir()
+    log_path = LOCK_FILE.parent / "discovery.log"
+    log_file = open(log_path, "a", encoding="utf-8")  # noqa: SIM115
+    log_file.write(f"\n--- discovery started pid pending ---\n")
+    log_file.flush()
     proc = subprocess.Popen(
         [sys.executable, str(PROJECT_ROOT / "run.py"), "--once"],
         cwd=str(PROJECT_ROOT),
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=log_file,
+        stderr=subprocess.STDOUT,
         start_new_session=True,
     )
     logger.info("Discovery subprocess started (pid %s)", proc.pid)
