@@ -81,9 +81,15 @@ if [[ ! -d .git ]]; then
 fi
 
 BEFORE="$(git rev-parse HEAD 2>/dev/null || echo none)"
-log "Fetching origin/$BRANCH (was $BEFORE)"
-git fetch origin "$BRANCH"
-git reset --hard "origin/$BRANCH"
+if [[ -n "${CAREERCOPILOT_GIT_REF:-}" ]]; then
+  log "Checking out $CAREERCOPILOT_GIT_REF (was $BEFORE)"
+  git fetch origin
+  git reset --hard "$CAREERCOPILOT_GIT_REF"
+else
+  log "Fetching origin/$BRANCH (was $BEFORE)"
+  git fetch origin "$BRANCH"
+  git reset --hard "origin/$BRANCH"
+fi
 AFTER="$(git rev-parse --short HEAD)"
 echo "$AFTER" > "$APP_DIR/REVISION"
 log "Now at $AFTER (wrote REVISION)"

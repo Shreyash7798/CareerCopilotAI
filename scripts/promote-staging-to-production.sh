@@ -33,11 +33,12 @@ export CAREERCOPILOT_DIR="$PROD_DIR"
 bash "$PROD_DIR/scripts/backup-db.sh" || log "WARN: backup skipped"
 
 log "Updating production to match staging commit"
+STAGING_HEAD="$(cd "$STAGING_DIR" && git rev-parse HEAD)"
 cd "$PROD_DIR"
-git fetch origin
-git checkout "$(cd "$STAGING_DIR" && git rev-parse HEAD)"
 export CAREERCOPILOT_DIR="$PROD_DIR"
 export CAREERCOPILOT_SERVICE=careercopilot
+export CAREERCOPILOT_HEALTH_URL="${CAREERCOPILOT_HEALTH_URL:-http://127.0.0.1:8000/api/version}"
+export CAREERCOPILOT_GIT_REF="$STAGING_HEAD"
 bash "$PROD_DIR/scripts/deploy.sh"
 
 PROD_REV=$(git rev-parse --short HEAD)

@@ -45,9 +45,10 @@ flowchart LR
 
    ```bash
    cd ~/CareerCopilotAI-staging
-   git fetch origin staging && git reset --hard origin/staging
-   bash scripts/deploy.sh
+   bash scripts/deploy-staging.sh
    ```
+
+   (`deploy.sh` alone defaults to `main` — always use `deploy-staging.sh` in the staging folder.)
 
 5. **Test** on `http://YOUR_IP:8001/` with real phones / Telegram
 6. **Promote** when satisfied:
