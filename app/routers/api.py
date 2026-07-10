@@ -50,7 +50,7 @@ from app.notifications import build_daily_summary, send_daily_summary, send_test
 from app.pipeline import rescore_all_jobs, run_pipeline
 from app.startup import (
     backfill_job_locations,
-    bootstrap_starter_pack,
+    bootstrap_starter_pack_for_user,
     enabled_company_count,
     ensure_accenture,
 )
@@ -208,26 +208,33 @@ def api_run_pipeline_sync():
 
 
 @router.post("/quick-start")
-def api_quick_start():
+def api_quick_start(request: Request):
     """Backfill locations + rescore, then run discovery in a subprocess."""
     from app.discovery_runner import run_discovery_subprocess
+    from app.user_access import enabled_monitor_count
 
+    user = get_current_user(request)
     companies_changed = 0
     locations_backfilled = 0
 
     with session_scope() as session:
-        if enabled_company_count(session) == 0:
-            companies_changed += bootstrap_starter_pack(session)
+        if enabled_monitor_count(session, user.id) == 0:
+            companies_changed = bootstrap_starter_pack_for_user(session, user.id)
+            log_activity(
+                session,
+                "config",
+                f"Quick start: starter pack enabled ({companies_changed} companies)",
+                user_id=user.id,
+            )
         if ensure_accenture(session):
             companies_changed += 1
         locations_backfilled = backfill_job_locations(session)
-        if companies_changed:
-            log_activity(session, "config", f"Quick start: {companies_changed} companies configured")
         if locations_backfilled:
             log_activity(
                 session,
                 "discovery",
                 f"Quick start: backfilled location on {locations_backfilled} jobs",
+                user_id=user.id,
             )
 
     if locations_backfilled:
@@ -240,7 +247,7 @@ def api_quick_start():
         high_priority = (
             session.execute(select(func.count(Job.id)).where(Job.is_high_priority.is_(True))).scalar() or 0
         )
-        enabled = enabled_company_count(session)
+        enabled = enabled_monitor_count(session, user.id)
 
     discovery = run_discovery_subprocess()
 

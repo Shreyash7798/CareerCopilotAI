@@ -27,6 +27,7 @@
     <a href="/recruiters" class="{{ 'on' if active == 'recruiters' }}">Recruiters</a>
     <a href="/profile" class="{{ 'on' if active == 'profile' }}">Profile</a>
     <a href="/settings" class="{{ 'on' if active == 'settings' }}">Settings</a>
+    <a href="/help" class="{{ 'on' if active == 'help' }}">Help</a>
     <a href="/activity" class="{{ 'on' if active == 'activity' }}">Activity</a>
     {% if is_admin|default(false) %}<a href="/admin/users" class="{{ 'on' if active == 'admin' }}">Users</a>{% endif %}
   </nav>
@@ -36,6 +37,7 @@
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <footer class="footer">
     CareerCopilot AI ·
+    <a href="/help">Help</a> ·
     <a href="/api/exports/excel/download">My Excel</a> ·
     <span class="muted small" id="build-rev"></span>
     <form class="inline-form" method="post" action="/logout"><button class="btn btn-sm" type="submit" style="border:none;background:none;color:var(--muted);cursor:pointer">Sign out</button></form>

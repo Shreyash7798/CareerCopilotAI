@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Help · CareerCopilot AI{% endblock %}
+{% block content %}
+
+<header class="page-header">
+  <div>
+    <h1 class="page-title">How to use CareerCopilot</h1>
+    <p class="page-sub">Everything runs in your browser — no GitHub, code, or technical setup needed.</p>
+  </div>
+</header>
+
+<section class="card panel-card">
+  <h2>Getting started (5 steps)</h2>
+  <ol class="help-steps">
+    <li><strong>Upload your CV</strong> on <a href="/profile">Profile</a> — PDF or DOCX. This powers match scoring.</li>
+    <li><strong>Pick companies</strong> on <a href="/companies">Companies</a> — toggle on the firms you care about, or use <em>Get results now</em> on the dashboard for a starter pack.</li>
+    <li><strong>Review matches</strong> on <a href="/jobs">Jobs</a> — filter by score, location, or high priority (70+).</li>
+    <li><strong>Track applications</strong> on <a href="/applications">Tracker</a> — log status, follow-up dates, and notes.</li>
+    <li><strong>Turn on alerts</strong> in <a href="/settings">Settings</a> — Telegram chat ID and/or email for instant high-priority job alerts.</li>
+  </ol>
+</section>
+
+<section class="card panel-card">
+  <h2>How discovery works</h2>
+  <p class="small">The system checks company career pages automatically in the background.</p>
+  <ul class="help-list">
+    <li>Each <strong>company you enable</strong> is checked about <strong>3 times per day</strong>.</li>
+    <li>Fewer companies → checks run more often. More companies → slightly longer between runs.</li>
+    <li>Your dashboard shows the schedule for <em>your</em> company list, not other users.</li>
+    <li>Use <strong>Run discovery</strong> (top right) for an immediate refresh — once every 15 minutes max.</li>
+  </ul>
+</section>
+
+<section class="card panel-card">
+  <h2>Your data stays private</h2>
+  <ul class="help-list">
+    <li>You only see your own jobs, applications, CV, and Excel export.</li>
+    <li>Other accounts on this portal cannot access your profile or tracker.</li>
+    <li>Sign out when using a shared device.</li>
+  </ul>
+</section>
+
+<section class="card panel-card">
+  <h2>Common questions</h2>
+  <dl class="help-faq">
+    <dt>Can I upload a PDF resume?</dt>
+    <dd>Yes. PDF and DOCX both work for scoring. DOCX is best if you want tailored resume downloads per job.</dd>
+    <dt>Why don’t I see jobs from a company I enabled?</dt>
+    <dd>Discovery may take a few minutes after enabling. Some portals block cloud servers — try again later or pick alternative companies.</dd>
+    <dt>How do Telegram alerts work?</dt>
+    <dd>Ask your admin for the shared bot name. Message the bot, then paste your chat ID in Settings → Notifications → Send test.</dd>
+    {% if is_admin %}
+    <dt>Admin: managing users</dt>
+    <dd>Create accounts under <a href="/admin/users">Users</a>. Share email + temporary password privately. Members never need server or GitHub access.</dd>
+    {% else %}
+    <dt>Need a password reset?</dt>
+    <dd>Contact your portal admin — they can reset it from the Users page.</dd>
+    {% endif %}
+  </dl>
+</section>
+
+{% endblock %}

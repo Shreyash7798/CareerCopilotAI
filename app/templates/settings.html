@@ -87,17 +87,19 @@
   <section class="card panel-card settings-section">
     <header class="panel-head"><h2>Discovery</h2></header>
     <table class="kv-table">
-      <tr><td>Your monitored companies</td><td>{{ discovery_summary.enabled_companies }}</td></tr>
-      <tr><td>Discovery interval</td><td>
+      <tr><td>Your monitored companies</td><td>{{ discovery_summary.user_monitored_companies }}</td></tr>
+      <tr><td>Your check frequency</td><td>
         {% if discovery_summary.auto_interval %}
-          every {{ discovery_summary.discovery_interval_minutes }} min (auto)
+          {{ discovery_summary.user_interval_label }} (~{{ discovery_summary.target_polls_per_company_per_day }}× per company per day)
         {% else %}
           fixed schedule
         {% endif %}
       </td></tr>
-      <tr><td>Daily summary time</td><td>{{ discovery_summary.target_polls_per_company_per_day }}×/day target coverage</td></tr>
+      {% if discovery_summary.shared_server %}
+      <tr><td>Server schedule</td><td class="small muted">{{ discovery_summary.global_interval_label }} (all accounts combined)</td></tr>
+      {% endif %}
     </table>
-    <p class="small muted">Manage companies on the <a href="/companies">Companies</a> page.</p>
+    <p class="small muted">Fewer companies = more frequent checks. Manage companies on <a href="/companies">Companies</a>.</p>
   </section>
 </div>
 

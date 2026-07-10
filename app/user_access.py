@@ -87,7 +87,21 @@ def sync_monitor_from_company(session: Session, user_id: int, company: Company) 
     )
 
 
-def enabled_monitor_count(session: Session) -> int:
+def enabled_monitor_count(session: Session, user_id: int | None = None) -> int:
+    """Count enabled monitors. With user_id, returns that user's count only."""
+    if user_id is not None:
+        return (
+            session.execute(
+                select(func.count(UserCompanyMonitor.id)).where(
+                    UserCompanyMonitor.user_id == user_id,
+                    UserCompanyMonitor.enabled.is_(True),
+                    UserCompanyMonitor.company_id.in_(
+                        select(Company.id).where(Company.ats_type.isnot(None))
+                    ),
+                )
+            ).scalar()
+            or 0
+        )
     return (
         session.execute(
             select(func.count(func.distinct(UserCompanyMonitor.company_id))).where(

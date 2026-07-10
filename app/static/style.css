@@ -463,3 +463,88 @@ details.rowform summary { cursor: pointer; }
   .filter-actions { width: 100%; }
   .filter-actions .btn { flex: 1; text-align: center; }
 }
+
+/* ── Mobile polish ───────────────────────────────────────── */
+
+.mobile-only { display: none; }
+.desktop-only { display: block; }
+
+@media (max-width: 640px) {
+  .mobile-only { display: block; }
+  .desktop-only { display: none; }
+
+  .topbar { flex-wrap: wrap; gap: 10px; }
+  .topbar .inline-form { flex: 1 1 100%; min-width: 0; }
+  .topbar #run-btn {
+    width: 100%; text-align: center; padding: 10px 12px; font-size: .85rem;
+  }
+  .brand { font-size: 1.05rem; }
+
+  .mainnav {
+    scrollbar-width: none;
+    mask-image: linear-gradient(to right, #000 90%, transparent);
+    -webkit-mask-image: linear-gradient(to right, #000 90%, transparent);
+  }
+  .mainnav::-webkit-scrollbar { display: none; }
+  .mainnav a { padding: 10px 10px; font-size: .85rem; }
+
+  .content { padding: 14px 12px calc(env(safe-area-inset-bottom, 0px) + 72px); }
+  .dash-hero { margin-bottom: 14px; }
+  .dash-sub { font-size: .82rem; line-height: 1.5; }
+  .dash-quick-filters { gap: 6px; align-items: center; }
+  .dash-quick-filters > .small { width: 100%; margin-bottom: 2px; }
+  .page-title { font-size: 1.25rem; }
+  .page-header { margin-bottom: 12px; }
+
+  table.list, table.data-table { font-size: .8rem; }
+  table.list th, table.list td,
+  table.data-table th, table.data-table td { padding: 6px 8px; }
+  .col-hide-sm { display: none; }
+
+  .user-cards { display: flex; flex-direction: column; gap: 10px; }
+  .user-card {
+    border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
+    background: #f8fafc;
+  }
+  .user-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .user-card-email { margin: 4px 0 8px; word-break: break-all; }
+  .user-card-meta {
+    display: flex; flex-wrap: wrap; gap: 8px 12px; font-size: .8rem; margin-bottom: 8px;
+  }
+  .card label.f input, .card label.f select { font-size: 16px; }
+}
+
+/* ── Job search journey + help ───────────────────────────── */
+
+.dash-sub-note { margin-top: 6px; font-size: .78rem; opacity: .85; }
+
+.dash-journey { margin-bottom: 14px; padding: 14px 16px; }
+.dash-journey .panel-head { margin-bottom: 10px; }
+.journey-steps {
+  display: flex; flex-wrap: wrap; gap: 8px;
+}
+.journey-step {
+  display: flex; align-items: center; gap: 8px; flex: 1 1 140px;
+  padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line);
+  background: #fff; color: var(--ink); text-decoration: none; font-size: .85rem;
+}
+.journey-step:hover { border-color: var(--accent); text-decoration: none; }
+.journey-step.done { background: #f0fdf4; border-color: #bbf7d0; }
+.journey-step.todo { background: #f8fafc; }
+.journey-icon {
+  width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
+  display: grid; place-items: center; font-size: .75rem; font-weight: 700;
+  background: var(--line); color: var(--muted);
+}
+.journey-step.done .journey-icon { background: var(--good); color: #fff; }
+.journey-step.todo .journey-icon { background: var(--accent); color: #fff; }
+
+.help-steps, .help-list { margin: 0; padding-left: 1.2rem; line-height: 1.6; }
+.help-steps li, .help-list li { margin-bottom: 8px; }
+.help-faq { margin: 0; }
+.help-faq dt { font-weight: 600; margin-top: 12px; }
+.help-faq dd { margin: 4px 0 0; color: var(--muted); font-size: .9rem; }
+
+@media (max-width: 640px) {
+  .journey-step { flex: 1 1 100%; }
+}

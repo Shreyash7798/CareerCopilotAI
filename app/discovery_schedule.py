@@ -81,8 +81,47 @@ def effective_discovery_interval_minutes() -> int:
     return compute_discovery_interval_minutes(enabled_company_count())
 
 
-def discovery_schedule_summary() -> dict:
+def format_interval_label(minutes: int) -> str:
+    """Human-readable cadence, e.g. 'every 2h 40m'."""
+    if minutes >= 60:
+        hrs = minutes // 60
+        mins_rem = minutes % 60
+        if mins_rem == 0:
+            return "every hour" if hrs == 1 else f"every {hrs} hours"
+        return f"every {hrs}h {mins_rem}m"
+    return f"every {minutes} min"
+
+
+def discovery_summary_for_user(session, user_id: int) -> dict:
+    """Per-user discovery cadence for dashboard and settings."""
+    from app.user_access import enabled_monitor_count
+
+    user_monitored = enabled_monitor_count(session, user_id)
+    global_monitored = enabled_company_count(session)
+    sched = _scheduler_settings()
+    target = int(sched.get("target_polls_per_company_per_day") or 3)
+    user_interval = compute_discovery_interval_minutes(user_monitored)
+    global_interval = compute_discovery_interval_minutes(global_monitored)
+    return {
+        "user_monitored_companies": user_monitored,
+        "global_monitored_companies": global_monitored,
+        "enabled_companies": user_monitored,
+        "target_polls_per_company_per_day": target,
+        "user_discovery_interval_minutes": user_interval,
+        "discovery_interval_minutes": user_interval,
+        "global_discovery_interval_minutes": global_interval,
+        "user_interval_label": format_interval_label(user_interval),
+        "global_interval_label": format_interval_label(global_interval),
+        "auto_interval": bool(sched.get("discovery_auto_interval", True)),
+        "shared_server": global_monitored > user_monitored,
+    }
+
+
+def discovery_schedule_summary(user_id: int | None = None, session=None) -> dict:
     """Human-readable snapshot for settings / dashboard."""
+    if user_id is not None and session is not None:
+        return discovery_summary_for_user(session, user_id)
+
     enabled = enabled_company_count()
     sched = _scheduler_settings()
     pipe = _pipeline_settings()

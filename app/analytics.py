@@ -185,18 +185,42 @@ def compute_analytics(session, user_id: int | None = None) -> dict:
     now = datetime.utcnow()
     week_ago = now - timedelta(days=7)
     month_ago = now - timedelta(days=30)
-    jobs_last_7_days = (
-        session.execute(
-            select(func.count(Job.id)).where(Job.discovered_at >= week_ago)
-        ).scalar()
-        or 0
-    )
-    jobs_last_30_days = (
-        session.execute(
-            select(func.count(Job.id)).where(Job.discovered_at >= month_ago)
-        ).scalar()
-        or 0
-    )
+    if user_id is not None:
+        jobs_last_7_days = (
+            session.execute(
+                select(func.count(Job.id))
+                .join(
+                    UserJobScore,
+                    and_(UserJobScore.job_id == Job.id, UserJobScore.user_id == user_id),
+                )
+                .where(Job.discovered_at >= week_ago, visible)
+            ).scalar()
+            or 0
+        )
+        jobs_last_30_days = (
+            session.execute(
+                select(func.count(Job.id))
+                .join(
+                    UserJobScore,
+                    and_(UserJobScore.job_id == Job.id, UserJobScore.user_id == user_id),
+                )
+                .where(Job.discovered_at >= month_ago, visible)
+            ).scalar()
+            or 0
+        )
+    else:
+        jobs_last_7_days = (
+            session.execute(
+                select(func.count(Job.id)).where(Job.discovered_at >= week_ago)
+            ).scalar()
+            or 0
+        )
+        jobs_last_30_days = (
+            session.execute(
+                select(func.count(Job.id)).where(Job.discovered_at >= month_ago)
+            ).scalar()
+            or 0
+        )
 
     return {
         "total_jobs": total_jobs,
