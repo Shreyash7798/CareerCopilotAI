@@ -13,6 +13,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.auth import AuthMiddleware
 from app.db import init_db
 from app.error_handlers import not_found_handler, server_error_handler
+from app.error_shield import ErrorShieldMiddleware
 from app.routers import api, pages
 from app.scheduler import start_scheduler, stop_scheduler
 from app.startup import schedule_startup_tasks
@@ -41,7 +42,10 @@ def create_app() -> FastAPI:
         description="Personal career intelligence and automation platform.",
         lifespan=lifespan,
     )
+    # Added after AuthMiddleware so it wraps it (outermost) — catches crashes
+    # that would otherwise surface as Starlette's plain "Internal Server Error".
     app.add_middleware(AuthMiddleware)
+    app.add_middleware(ErrorShieldMiddleware)
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
     app.add_exception_handler(StarletteHTTPException, not_found_handler)
     app.add_exception_handler(Exception, server_error_handler)

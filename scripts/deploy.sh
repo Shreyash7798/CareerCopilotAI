@@ -155,6 +155,17 @@ fi
 log "Waiting for $HEALTH_URL (up to $((HEALTH_RETRIES * HEALTH_INTERVAL))s)..."
 if VERSION="$(wait_for_service)"; then
   log "Live version: $VERSION"
+  # Verify the RUNNING process picked up the new code — a survivor process
+  # serves the fresh REVISION file while executing stale code.
+  RUNTIME="$(echo "$VERSION" | grep -o '"runtime_revision":"[^"]*"' | cut -d'"' -f4 || true)"
+  if [[ -n "$RUNTIME" && "$RUNTIME" != "$AFTER" ]]; then
+    log "WARN: runtime=$RUNTIME but deployed=$AFTER — killing stale process"
+    pkill -9 -f "$APP_DIR/.venv/bin/python run.py" 2>/dev/null || true
+    sudo systemctl restart "$SERVICE" 2>/dev/null || true
+    sleep "$HEALTH_INTERVAL"
+    VERSION="$(wait_for_service || true)"
+    log "After forced restart: ${VERSION:-no response}"
+  fi
 else
   log "WARN: Service not responding — attempting one more restart"
   if systemctl list-unit-files "${SERVICE}.service" 2>/dev/null | grep -q "$SERVICE"; then

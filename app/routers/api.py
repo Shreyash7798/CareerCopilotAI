@@ -72,7 +72,13 @@ def api_version():
 @router.get("/health")
 def api_health():
     """Lightweight liveness probe — does not run discovery or heavy DB work."""
-    return {"ok": True}
+    from app.error_shield import get_last_error
+
+    payload: dict = {"ok": True}
+    last = get_last_error()
+    if last:
+        payload["last_error"] = last
+    return payload
 
 
 @router.get("/crawl4ai/health")

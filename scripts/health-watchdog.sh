@@ -11,8 +11,22 @@ STAMP_FILE="$APP_DIR/data/.watchdog-restart"
 
 mkdir -p "$APP_DIR/data"
 
-if curl -fsS --connect-timeout 5 --max-time 10 "$HEALTH_URL" >/dev/null 2>&1; then
-  exit 0
+BODY="$(curl -fsS --connect-timeout 5 --max-time 10 "$HEALTH_URL" 2>/dev/null || true)"
+
+if [[ -n "$BODY" ]]; then
+  # App responds — but is it running the deployed code? A process that
+  # survived a deploy serves the new REVISION file with old code.
+  DEPLOYED="$(cat "$APP_DIR/REVISION" 2>/dev/null || true)"
+  RUNTIME="$(echo "$BODY" | grep -o '"runtime_revision":"[^"]*"' | cut -d'"' -f4 || true)"
+  if [[ -z "$RUNTIME" && -n "$DEPLOYED" ]]; then
+    # Old build (no runtime_revision field) still running after a deploy.
+    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Stale process detected (no runtime_revision; deployed $DEPLOYED) — forcing restart" >>"$LOG"
+  elif [[ -n "$RUNTIME" && -n "$DEPLOYED" && "$RUNTIME" != "$DEPLOYED" ]]; then
+    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Stale process detected (running $RUNTIME, deployed $DEPLOYED) — forcing restart" >>"$LOG"
+  else
+    exit 0
+  fi
+  # Fall through to the restart logic below.
 fi
 
 # Avoid restart storms: at most once per 2 minutes.
@@ -32,8 +46,16 @@ rm -f "$APP_DIR/data/.discovery.lock" 2>/dev/null || true
 
 if systemctl list-unit-files "${SERVICE}.service" 2>/dev/null | grep -q "$SERVICE"; then
   sudo systemctl restart "$SERVICE" 2>/dev/null || true
+  sleep 3
+  # If a stray non-systemd process still holds the port, kill it hard.
+  if ! curl -fsS --connect-timeout 3 "$HEALTH_URL" >/dev/null 2>&1; then
+    pkill -9 -f "$APP_DIR/.venv/bin/python run.py" 2>/dev/null || true
+    pkill -9 -f "uvicorn" 2>/dev/null || true
+    sudo systemctl restart "$SERVICE" 2>/dev/null || true
+  fi
 else
   cd "$APP_DIR"
+  pkill -9 -f "$APP_DIR/.venv/bin/python run.py" 2>/dev/null || true
   # shellcheck disable=SC1091
   [[ -x .venv/bin/python ]] && nohup .venv/bin/python run.py >>"$LOG" 2>&1 &
 fi
