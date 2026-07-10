@@ -66,11 +66,11 @@ def _pipeline_settings() -> dict:
 
 
 def _source_timeout_seconds() -> float:
-    return float(_pipeline_settings().get("source_timeout_seconds") or 120)
+    return float(_pipeline_settings().get("source_timeout_seconds") or 60)
 
 
 def _max_sources_per_run() -> int:
-    return int(_pipeline_settings().get("max_sources_per_run") or 25)
+    return int(_pipeline_settings().get("max_sources_per_run") or 15)
 
 
 def _fetch_source(entry: dict) -> list[RawJob]:

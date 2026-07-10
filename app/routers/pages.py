@@ -177,7 +177,11 @@ def _score_tooltip(breakdown) -> str:
         if not isinstance(item, dict):
             continue
         name = str(item.get("name", "")).replace("_", " ").title()
-        score = float(item.get("score", 0))
+        raw = item.get("score")
+        try:
+            score = float(raw if raw is not None else 0)
+        except (TypeError, ValueError):
+            score = 0.0
         pct = int(round(score * 100 if score <= 1 else score))
         parts.append(f"{name}: {pct}")
     return " · ".join(parts)
@@ -270,26 +274,29 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     has_cv = bool(user.cv_path)
     visible = visible_jobs_filter()
     score_join = and_(UserJobScore.job_id == Job.id, UserJobScore.user_id == user.id)
+    # Eager-load company — template reads job.company after the DB session closes.
     recent_high = attach_user_scores(
         db,
         db.execute(
             select(Job)
+            .options(joinedload(Job.company))
             .join(UserJobScore, score_join)
             .where(visible, UserJobScore.is_high_priority.is_(True))
             .order_by(UserJobScore.match_score.desc(), Job.discovered_at.desc())
             .limit(8)
-        ).scalars().all(),
+        ).unique().scalars().all(),
         user.id,
     )
     recent_top = attach_user_scores(
         db,
         db.execute(
             select(Job)
+            .options(joinedload(Job.company))
             .join(UserJobScore, score_join)
             .where(visible)
             .order_by(UserJobScore.match_score.desc(), Job.discovered_at.desc())
             .limit(8)
-        ).scalars().all(),
+        ).unique().scalars().all(),
         user.id,
     )
     recent_logs = (
@@ -564,13 +571,13 @@ def applications_page(request: Request, db: Session = Depends(get_db), status: s
     user = get_current_user(request)
     stmt = (
         select(Application)
-        .options(joinedload(Application.job))
+        .options(joinedload(Application.job).joinedload(Job.company))
         .where(Application.user_id == user.id)
         .order_by(Application.updated_at.desc())
     )
     if status:
         stmt = stmt.where(Application.status == status)
-    apps = db.execute(stmt).scalars().all()
+    apps = db.execute(stmt).unique().scalars().all()
     pipeline_counts = {s: 0 for s in APPLICATION_STATUSES}
     for a in apps:
         pipeline_counts[a.status] = pipeline_counts.get(a.status, 0) + 1
@@ -1005,7 +1012,14 @@ def analytics_page(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/recruiters", response_class=HTMLResponse)
 def recruiters_page(request: Request, db: Session = Depends(get_db)):
-    recruiters = db.execute(select(Recruiter).order_by(Recruiter.name)).scalars().all()
+    recruiters = (
+        db.execute(
+            select(Recruiter).options(joinedload(Recruiter.company)).order_by(Recruiter.name)
+        )
+        .unique()
+        .scalars()
+        .all()
+    )
     return templates.TemplateResponse(
         request,
         "recruiters.html",

@@ -19,8 +19,12 @@ bootstrap:
   discovery_startup_delay_seconds: 300
 
 scheduler:
-  enabled: true
+  enabled: false
   discovery_auto_interval: true
+
+pipeline:
+  source_timeout_seconds: 60
+  max_sources_per_run: 10
 
 notifications:
   telegram:

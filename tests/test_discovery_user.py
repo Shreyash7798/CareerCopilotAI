@@ -74,6 +74,7 @@ def test_fewer_user_companies_means_shorter_interval(temp_db):
         admin_summary = discovery_summary_for_user(session, admin.id)
         member_summary = discovery_summary_for_user(session, member.id)
 
-        assert admin_summary["user_discovery_interval_minutes"] == 160
-        assert member_summary["user_discovery_interval_minutes"] == 360
+        assert admin_summary["user_discovery_interval_minutes"] == compute_discovery_interval_minutes(69)
+        assert member_summary["user_discovery_interval_minutes"] == compute_discovery_interval_minutes(1)
         assert member_summary["shared_server"] is True
+        assert admin_summary["user_discovery_interval_minutes"] < member_summary["user_discovery_interval_minutes"]

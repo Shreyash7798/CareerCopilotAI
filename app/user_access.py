@@ -6,7 +6,7 @@ import json
 from collections import defaultdict
 from typing import Any
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, case, func, select
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -248,19 +248,38 @@ def company_monitor_map(session: Session, user_id: int) -> dict[int, UserCompany
 
 
 def company_page_stats(session: Session, user_id: int) -> tuple[dict[int, dict], dict[str, int]]:
-    """Batch-load per-company job stats and application counts (avoids N+1 queries)."""
+    """Batch-load per-company job stats and application counts (SQL aggregates)."""
+    score_col = func.coalesce(UserJobScore.match_score, 0.0)
     rows = session.execute(
-        select(Job.company_id, UserJobScore, Job)
+        select(
+            Job.company_id,
+            func.count(Job.id),
+            func.sum(case((UserJobScore.is_high_priority.is_(True), 1), else_=0)),
+            func.avg(score_col),
+        )
         .join(
             UserJobScore,
             and_(UserJobScore.job_id == Job.id, UserJobScore.user_id == user_id),
         )
         .where(Job.is_active.is_(True), Job.company_id.isnot(None))
+        .group_by(Job.company_id)
     ).all()
 
-    jobs_by_company: dict[int, list[Job]] = defaultdict(list)
-    for company_id, score, job in rows:
-        jobs_by_company[company_id].append(hydrate_job_from_score(job, score))
+    # Locations: only sample recent jobs per company (cap memory on free-tier VMs)
+    loc_rows = session.execute(
+        select(Job.company_id, Job.location)
+        .join(
+            UserJobScore,
+            and_(UserJobScore.job_id == Job.id, UserJobScore.user_id == user_id),
+        )
+        .where(Job.is_active.is_(True), Job.company_id.isnot(None), Job.location.isnot(None))
+        .order_by(Job.discovered_at.desc())
+        .limit(500)
+    ).all()
+    locs_by_company: dict[int, set[str]] = defaultdict(set)
+    for company_id, location in loc_rows:
+        if location and len(locs_by_company[company_id]) < 4:
+            locs_by_company[company_id].add(location.split(",")[0].strip())
 
     app_counts = dict(
         session.execute(
@@ -271,14 +290,12 @@ def company_page_stats(session: Session, user_id: int) -> tuple[dict[int, dict],
     )
 
     stats: dict[int, dict] = {}
-    for company_id, scored_jobs in jobs_by_company.items():
+    for company_id, active, high_priority, avg_score in rows:
         stats[company_id] = {
-            "active_jobs": len(scored_jobs),
-            "high_priority": sum(1 for j in scored_jobs if j.is_high_priority),
-            "top_locations": sorted(
-                {(j.location or "").split(",")[0].strip() for j in scored_jobs if j.location}
-            )[:4],
-            "avg_score": round(sum(j.match_score for j in scored_jobs) / len(scored_jobs), 1),
+            "active_jobs": int(active or 0),
+            "high_priority": int(high_priority or 0),
+            "top_locations": sorted(locs_by_company.get(company_id, set()))[:4],
+            "avg_score": round(float(avg_score or 0), 1),
         }
     return stats, app_counts
 
