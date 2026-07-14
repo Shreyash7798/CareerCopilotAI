@@ -25,6 +25,9 @@ def main() -> None:
     init_db()
 
     if args.once:
+        import os
+        import sys
+
         from app.discovery_runner import acquire_discovery_lock, clear_discovery_lock
         from app.notifications import send_run_summary
         from app.pipeline import run_pipeline
@@ -33,6 +36,7 @@ def main() -> None:
             print("Discovery already running — skipped.")
             return
 
+        exit_code = 0
         try:
             result = run_pipeline()
             print(
@@ -47,9 +51,18 @@ def main() -> None:
                 import logging
 
                 logging.getLogger(__name__).exception("Run summary notification failed")
+        except Exception:  # noqa: BLE001
+            import traceback
+
+            traceback.print_exc()
+            exit_code = 1
         finally:
             clear_discovery_lock()
-        return
+        # Hard-exit: abandoned fetch threads (timed-out Playwright/HTTP calls)
+        # are non-daemon and would otherwise block interpreter shutdown forever.
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(exit_code)
 
     if args.summary:
         from app.notifications import send_daily_summary

@@ -106,10 +106,13 @@ def _run_entry(entry: dict, result: PipelineResult) -> list[RawJob]:
 
     result.sources_run += 1
     timeout = _source_timeout_seconds()
+    # NO context manager here: `with ThreadPoolExecutor` calls shutdown(wait=True)
+    # on exit, which blocks forever on the very fetch we just timed out — the
+    # whole discovery run then hangs after 'Discovery started' with no result.
+    executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"src-{source_type}")
     try:
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(_fetch_source, entry)
-            return future.result(timeout=timeout)
+        future = executor.submit(_fetch_source, entry)
+        return future.result(timeout=timeout)
     except FuturesTimeoutError:
         result.sources_failed += 1
         msg = f"{source_type}/{company}: timed out after {int(timeout)}s"
@@ -121,6 +124,9 @@ def _run_entry(entry: dict, result: PipelineResult) -> list[RawJob]:
         result.errors.append(f"{source_type}/{company}: {exc}")
         logger.warning("Source failed: %s", exc)
         return []
+    finally:
+        # Abandon the worker thread if it is hung; never wait for it.
+        executor.shutdown(wait=False, cancel_futures=True)
 
 
 def _discover_raw_jobs(

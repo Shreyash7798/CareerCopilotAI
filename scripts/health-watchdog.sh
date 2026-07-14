@@ -11,6 +11,20 @@ STAMP_FILE="$APP_DIR/data/.watchdog-restart"
 
 mkdir -p "$APP_DIR/data"
 
+# Kill discovery subprocesses stuck for over 45 minutes (hung Playwright /
+# network fetch). The lock clears automatically once the PID is dead.
+MAX_DISCOVERY_SECONDS=2700
+while read -r pid etimes; do
+  [[ -z "$pid" ]] && continue
+  if (( etimes > MAX_DISCOVERY_SECONDS )); then
+    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Discovery pid $pid stuck ${etimes}s — killing" >>"$LOG"
+    kill -9 "$pid" 2>/dev/null || true
+    pkill -9 -f "playwright.*chromium" 2>/dev/null || true
+    pkill -9 -f "chromium.*--headless" 2>/dev/null || true
+    rm -f "$APP_DIR/data/.discovery.lock" 2>/dev/null || true
+  fi
+done < <(pgrep -f "run.py --once" 2>/dev/null | while read -r p; do echo "$p $(ps -o etimes= -p "$p" 2>/dev/null | tr -d ' ')"; done)
+
 PORT="$(echo "$HEALTH_URL" | grep -oE ':[0-9]+' | head -1 | tr -d ':')"
 PORT="${PORT:-8000}"
 
