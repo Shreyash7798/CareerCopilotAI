@@ -30,7 +30,7 @@ pipeline:
   # Per-company timeout (seconds). Keep short on 1 GB free-tier VMs.
   source_timeout_seconds: 60
   # Cap companies polled per cycle so a restart cannot hammer all sources at once.
-  max_sources_per_run: 15
+  max_sources_per_run: 3
 
 scheduler:
   enabled: true
