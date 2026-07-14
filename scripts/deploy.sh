@@ -37,11 +37,24 @@ show_service_logs() {
 }
 
 kill_stale_workers() {
+  local lock_file="$APP_DIR/data/.discovery.lock"
+  local stale_min=45
+  if [[ -f "$lock_file" ]]; then
+    local pid age_min
+    pid="$(cat "$lock_file" 2>/dev/null || true)"
+    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+      age_min=$(( ( $(date +%s) - $(stat -c %Y "$lock_file" 2>/dev/null || echo 0) ) / 60 ))
+      if (( age_min < stale_min )); then
+        log "Discovery still running (pid $pid, ${age_min}m old) — leaving it alone"
+        return
+      fi
+    fi
+  fi
   log "Stopping stale discovery / browser workers"
   pkill -f "${APP_DIR}/run.py --once" 2>/dev/null || true
   pkill -f "playwright.*chromium" 2>/dev/null || true
   pkill -f "chromium.*--headless" 2>/dev/null || true
-  rm -f "$APP_DIR/data/.discovery.lock" 2>/dev/null || true
+  rm -f "$lock_file" 2>/dev/null || true
 }
 
 free_tier_hardening() {
@@ -160,7 +173,13 @@ if VERSION="$(wait_for_service)"; then
   RUNTIME="$(echo "$VERSION" | grep -o '"runtime_revision":"[^"]*"' | cut -d'"' -f4 || true)"
   if [[ -n "$RUNTIME" && "$RUNTIME" != "$AFTER" ]]; then
     log "WARN: runtime=$RUNTIME but deployed=$AFTER — killing stale process"
-    pkill -9 -f "$APP_DIR/.venv/bin/python run.py" 2>/dev/null || true
+    MAIN_PID="$(systemctl show -p MainPID --value "$SERVICE" 2>/dev/null || echo 0)"
+    for pid in $(pgrep -f "$APP_DIR/.venv/bin/python run.py" 2>/dev/null || true); do
+      if [[ "$pid" != "$MAIN_PID" ]]; then
+        log "Killing stale pid $pid (main service pid is $MAIN_PID)"
+        sudo kill -9 "$pid" 2>/dev/null || true
+      fi
+    done
     sudo systemctl restart "$SERVICE" 2>/dev/null || true
     sleep "$HEALTH_INTERVAL"
     VERSION="$(wait_for_service || true)"
